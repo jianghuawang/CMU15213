@@ -140,6 +140,7 @@ NOTES:
  *   Rating: 1
  */
 int bitXor(int x, int y) {
+  // Using Demorgan's law (not(A or B)==not A and not B) and and reverse it again
   int result = ~(x & y);
   return ~(~(result & x)&(~(result & y)));
 }
@@ -161,7 +162,8 @@ int tmin(void) {
  *   Rating: 2
  */
 int isTmax(int x) {
-  return !(((x+1)|x)^(~0));
+  //using !!(~x) to exclude the case that x = -1 (~(-1)will be 0, and !!(0)will be 0)
+  return !((x+1)^(~x)) & !!(~x);
 }
 /* 
  * allOddBits - return 1 if all odd-numbered bits in word set to 1
@@ -171,7 +173,12 @@ int isTmax(int x) {
  *   Rating: 2
  */
 int allOddBits(int x) {
-  return 2;
+  int mask=0x55;
+  x=x | mask;
+  x=x | (mask<<8);
+  x=x | (mask<<16);
+  x=x | (mask<<24);
+  return !(~x);
 }
 /* 
  * negate - return -x 
@@ -194,7 +201,14 @@ int negate(int x) {
  *   Rating: 3
  */
 int isAsciiDigit(int x) {
-  return 2;
+  int higher=x&(~0xF);
+  int higherResult=higher^0x30;
+  int lower=x&0xF;
+  int largerTen=0xA;
+  int largerTwelve=0xC;
+  int doLargerTen=!((lower & largerTen)^largerTen);
+  int doLargerTwelve=!((lower & largerTwelve)^largerTwelve);
+  return !higherResult&!(doLargerTen|doLargerTwelve);
 }
 /* 
  * conditional - same as x ? y : z 
