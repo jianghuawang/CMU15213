@@ -141,6 +141,7 @@ NOTES:
  */
 int bitXor(int x, int y) {
   // Using Demorgan's law (not(A or B)==not A and not B) and and reverse it again
+  // operations:8
   int result = ~(x & y);
   return ~(~(result & x)&(~(result & y)));
 }
@@ -151,6 +152,7 @@ int bitXor(int x, int y) {
  *   Rating: 1
  */
 int tmin(void) {
+  //operations:1
   return 0x1<<31;
 }
 //2
@@ -163,6 +165,7 @@ int tmin(void) {
  */
 int isTmax(int x) {
   //using !!(~x) to exclude the case that x = -1 (~(-1)will be 0, and !!(0)will be 0)
+  //operations:8
   return !((x+1)^(~x)) & !!(~x);
 }
 /* 
@@ -173,6 +176,7 @@ int isTmax(int x) {
  *   Rating: 2
  */
 int allOddBits(int x) {
+  //operations:9
   int mask=0x55;
   x=x | mask;
   x=x | (mask<<8);
@@ -188,6 +192,7 @@ int allOddBits(int x) {
  *   Rating: 2
  */
 int negate(int x) {
+  //operations:2
   return (~x+1);
 }
 //3
@@ -201,6 +206,8 @@ int negate(int x) {
  *   Rating: 3
  */
 int isAsciiDigit(int x) {
+  //operations:14
+  //better approach:after finding that 0x38<=x, check if x==0x38 or x==0x39.
   int higher=x&(~0xF);
   int higherResult=higher^0x30;
   int lower=x&0xF;
@@ -228,7 +235,7 @@ int conditional(int x, int y, int z) {
  *   Rating: 3
  */
 int isLessOrEqual(int x, int y) {
-  return 2;
+  return !(x^y);
 }
 //4
 /* 
