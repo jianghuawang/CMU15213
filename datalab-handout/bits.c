@@ -238,9 +238,9 @@ int conditional(int x, int y, int z) {
  */
 int isLessOrEqual(int x, int y) {
   int signX=x>>31;
-  int signY=x>>31;
+  int signY=y>>31;
   int signResult = signX^signY;
-  return !(x^y)|(!signResult & !!(x+(~y+1))>>31)|((signX+1)^signY);
+  return !(x^y)|((!signResult) & !!((x+(~y+1))>>31))|!((signX+1)^signY);
 }
 //4
 /* 
