@@ -253,8 +253,16 @@ int isLessOrEqual(int x, int y) {
  *   Rating: 4 
  */
 int logicalNeg(int x) {
+  //operation:12
+  //bit smearing
+  x |= x >> 16;
+  x |= x >> 8;
+  x |= x >> 4;
+  x |= x >> 2;
+  x |= x >> 1;
 
-  return 2;
+  //only 0 will have the last digit be 1 after fliping
+  return (~x&1);
 }
 /* howManyBits - return the minimum number of bits required to represent x in
  *             two's complement
@@ -269,6 +277,13 @@ int logicalNeg(int x) {
  *  Rating: 4
  */
 int howManyBits(int x) {
+  x |= x >> 16;
+  x |= x >> 8;
+  x |= x >> 4;
+  x |= x >> 2;
+  x |= x >> 1;
+  x^=x>>1;
+
   return 0;
 }
 //float
