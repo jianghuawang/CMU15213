@@ -226,7 +226,7 @@ int isAsciiDigit(int x) {
  */
 int conditional(int x, int y, int z) {
   //operations:15
-  //when x is 0,shift y -1(31) and 1, when x is 1, shift z -1(31) and 1
+  //when x is 0,shift y left -1(31) and 1, when x is 1, shift z left -1(31) and 1
   return (y<<(!!x+~0x0)<<!x)+(z<<(!x+~0x0)<<(!!x));
 }
 /* 
@@ -237,10 +237,11 @@ int conditional(int x, int y, int z) {
  *   Rating: 3
  */
 int isLessOrEqual(int x, int y) {
+  //operations: 18
   int signX=x>>31;
   int signY=y>>31;
   int signResult = signX^signY;
-  return !(x^y)|((!signResult) & !!((x+(~y+1))>>31))|!((signX+1)^signY);
+  return (!(x^y))|((!signResult) & !!((x+(~y+1))>>31))|!((signX+1)^signY);
 }
 //4
 /* 
