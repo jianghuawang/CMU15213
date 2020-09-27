@@ -348,7 +348,9 @@ unsigned float_i2f(int x) {
   if(!(expo^0xFF))
     return (sign | 0x7F800000);
   unsigned frac=(x>>9)&(0x7FFFFF);
-  unsigned newValue=frac|(expo<<23)|sign;
+  if(x&0x100)
+    frac+=0x1;
+  unsigned newValue=frac+(expo<<23)+sign;
   return newValue;
 }
 /* 
