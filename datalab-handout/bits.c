@@ -301,20 +301,22 @@ int howManyBits(int x) {
  *   Rating: 4
  */
 unsigned float_twice(unsigned uf) {
+  //mask to extract exponential part 
   unsigned inf=0x7F800000;
+
   unsigned expo=uf&inf;
   unsigned frac=(uf&0x7FFFFF);
   unsigned sign=uf&(0x80000000);
-  //NaN and Infinity and +-0
+  //handle NaN and Infinity and +-0
   if((!(expo^inf)) || (!(expo^0) && !frac))
     return uf;
-  //denormalized
+  //handle denormalized value
   else if(!(expo^0)&& !!frac){
     return (uf^frac)|(frac<<1);
   }
-  //check if overflow
   else{
     unsigned newValue=(uf^expo)|(expo+0x00800000);
+    //check if overflow or underflow
     if(!((newValue&inf)^inf))
       newValue=sign|inf;
     return newValue;
@@ -330,7 +332,24 @@ unsigned float_twice(unsigned uf) {
  *   Rating: 4
  */
 unsigned float_i2f(int x) {
-  return 2;
+  if(!x)  
+    return 0x00000000;
+  unsigned sign = x & 0x80000000;
+  if(sign)
+    x = ~x + 1; 
+  unsigned expo = 32+127;
+  //find the first 1 in x and also find expoonential
+  while(!(x&0x80000000)){
+    x<<=1;
+    expo-=1;
+  }
+  x<<=1;
+  expo-=1;
+  if(!(expo^0xFF))
+    return (sign | 0x7F800000);
+  unsigned frac=(x>>9)&(0x7FFFFF);
+  unsigned newValue=frac|(expo<<23)|sign;
+  return newValue;
 }
 /* 
  * float_f2i - Return bit-level equivalent of expression (int) f
