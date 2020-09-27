@@ -339,7 +339,7 @@ unsigned float_i2f(int x) {
     x = ~x + 1; 
   unsigned expo = 32+127;
   //find the first 1 in x and also find expoonential
-  while(!(x&0x80000000)){
+  while(!(x&0x80000000)&&(expo>127)){
     x<<=1;
     expo-=1;
   }
