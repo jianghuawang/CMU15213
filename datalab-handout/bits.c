@@ -302,20 +302,20 @@ int howManyBits(int x) {
  */
 unsigned float_twice(unsigned uf) {
   unsigned inf=0x7F800000;
-  unsigned exp=uf&inf;
+  unsigned expo=uf&inf;
   unsigned frac=(uf&0x7FFFFF);
   unsigned sign=uf&(0x80000000);
   //NaN and Infinity and +-0
-  if((!(exp^inf)) || (!(exp^0) && !frac))
+  if((!(expo^inf)) || (!(expo^0) && !frac))
     return uf;
   //denormalized
-  else if(!(exp^0)&& !!frac){
+  else if(!(expo^0)&& !!frac){
     return (uf^frac)|(frac<<1);
   }
   //check if overflow
   else{
-    unsigned newValue=(uf^exp)|(exp+0x00800000);
-    if((uf&inf)^inf)
+    unsigned newValue=(uf^expo)|(expo+0x00800000);
+    if(!((uf&inf)^inf))
       newValue=sign|inf;
     return newValue;
   }
