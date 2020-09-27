@@ -315,7 +315,7 @@ unsigned float_twice(unsigned uf) {
   //check if overflow
   else{
     unsigned newValue=(uf^expo)|(expo+0x00800000);
-    if(!((uf&inf)^inf))
+    if(!((newValue&inf)^inf))
       newValue=sign|inf;
     return newValue;
   }
