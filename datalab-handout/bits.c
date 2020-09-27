@@ -164,7 +164,7 @@ int tmin(void) {
  *   Rating: 2
  */
 int isTmax(int x) {
-  //using !!(~x) to exclude the case that x = -1 (~(-1)will be 0, and !!(0)will be 0)
+  //using !!(~x) to exclude the case that x = -1 ( ~(-1)will be 0, and !!(0)will be 0)
   //operations:8
   return !((x+1)^(~x)) & !!(~x);
 }
@@ -208,12 +208,17 @@ int negate(int x) {
 int isAsciiDigit(int x) {
   //operations:14
   //better approach:after finding that 0x38<=x, check if x==0x38 or x==0x39.
+  
+  //1. extract bit 4-31 and find if these higher bit contains only 3
   int higher=x&(~0xF);
   int higherResult=higher^0x30;
+  //2. extracct bit 0-3
   int lower=x&0xF;
   int largerTen=0xA;
   int largerTwelve=0xC;
+  //3. check if x is 10 or 11 or 14
   int doLargerTen=!((lower & largerTen)^largerTen);
+  //4. check if x is 12 or 13 or 14
   int doLargerTwelve=!((lower & largerTwelve)^largerTwelve);
   return !higherResult&!(doLargerTen|doLargerTwelve);
 }
@@ -240,7 +245,11 @@ int isLessOrEqual(int x, int y) {
   //operations: 18
   int signX=x>>31;
   int signY=y>>31;
+  //check wheather x and y are same sign
   int signResult = signX^signY;
+  //1. check if x and y are equal 
+  //2. if x and y are same sign, then check if x-y>0 
+  //3. check if x is negative and y is positive
   return (!(x^y))|((!signResult) & !!((x+(~y+1))>>31))|!((signX+1)^signY);
 }
 //4
@@ -254,7 +263,7 @@ int isLessOrEqual(int x, int y) {
  */
 int logicalNeg(int x) {
   //operation:12
-  //bit smearing
+  //bit smearing (making all the bits that after the first bit that is 1 equal to 1)
   x |= x >> 16;
   x |= x >> 8;
   x |= x >> 4;
@@ -277,13 +286,6 @@ int logicalNeg(int x) {
  *  Rating: 4
  */
 int howManyBits(int x) {
-  x |= x >> 16;
-  x |= x >> 8;
-  x |= x >> 4;
-  x |= x >> 2;
-  x |= x >> 1;
-  x^=x>>1;
-
   return 0;
 }
 //float
@@ -299,7 +301,24 @@ int howManyBits(int x) {
  *   Rating: 4
  */
 unsigned float_twice(unsigned uf) {
-  return 2;
+  unsigned inf=0x7F800000;
+  unsigned exp=uf&inf;
+  unsigned frac=(uf&0x7FFFFF);
+  unsigned sign=uf&(0x80000000);
+  //NaN and Infinity and +-0
+  if((!(exp^inf)) || (!(exp^0) && !frac))
+    return uf;
+  //denormalized
+  else if(!(exp^0)&& !!frac){
+    return (uf^frac)|(frac<<1);
+  }
+  //check if overflow
+  else{
+    unsigned newValue=(uf^exp)|(exp+0x00800000);
+    if((uf&inf)^inf)
+      newValue=sign|inf;
+    return newValue;
+  }
 }
 /* 
  * float_i2f - Return bit-level equivalent of expression (float) x
