@@ -351,7 +351,7 @@ unsigned float_i2f(int x) {
   if(x&0x100){
     if(frac+1==0x800000){
       frac=0;
-      expo+=0x800000;
+      expo+=1;
     }
     else{
       frac+=1;
