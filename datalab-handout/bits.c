@@ -331,29 +331,93 @@ unsigned float_twice(unsigned uf) {
  *   Max ops: 30
  *   Rating: 4
  */
-unsigned float_i2f(int x) {
-  int expo,sign,newValue,frac;
-  if(!x)  
-    return 0x00000000;
-  sign = x & 0x80000000;
-  if(sign)
-    x = ~x + 1; 
-  expo = 32+127;
-  //find the first 1 in x by right shift until meeting the first 1
-  //find expoonential 
-  for(;(expo>=127) && !(x&0x80000000);){
-    x=x<<1;
-    expo-=1;
-  }
-  x<<=1;
-  expo-=1;
-  if(!(expo^0xFF))
-    return (sign | 0x7F800000);
-  frac=(x>>9)&(0x7FFFFF);
-  if(x&0x100)
-    frac+=0x1;
-  newValue=frac+(expo<<23)+sign;
-  return newValue;
+// unsigned float_i2f(int x) {
+//   int expo,sign,newValue,frac;
+//   if(!x)  
+//     return 0x00000000;
+//   sign = x & 0x80000000;
+//   if(sign)
+//     x = ~x + 1; 
+//   expo = 32+127;
+//   //find the first 1 in x by right shift until meeting the first 1
+//   //find expoonential 
+//   for(;(expo>=127) && !(x&0x80000000);){
+//     x=x<<1;
+//     expo-=1;
+//   }
+//   x<<=1;
+//   expo-=1;
+//   if(!(expo^0xFF))
+//     return (sign | 0x7F800000);
+//   frac=(x>>9)&(0x7FFFFF);
+//   if(x&0x100)
+//     frac+=0x1;
+//   newValue=frac+(expo<<23)+sign;
+//   return newValue;
+// }
+unsigned float_i2f(int xi) {
+    unsigned xu, signBit, temp, signBitMask, frac, bias, exp, firstOneMask,
+        xuWithOriginalFirstOneSetToZero, roundBitIdx, roundBit,
+        stickyBitSource, guardBit;
+    int firstOneIdx;
+
+    signBitMask = 0x80000000;
+    signBit = exp = frac = 0;
+    xu = xi;
+
+    // Reverse negative int to positive int.
+    signBit = xu & signBitMask;
+    xu = signBit ? -xu : xu;
+
+    // Determine the index first non zero bit.
+    // We count from least significant bit in this function, starting from 0.
+    temp = xu;
+    firstOneIdx = 31;
+    for (; (firstOneIdx >= 0) && !(temp & signBitMask);) {
+        firstOneIdx = firstOneIdx - 1;
+        temp = temp << 1;
+    }
+
+    // Compute fractional and exp
+    bias = 0x7f;  // 0x0111 1111
+    firstOneMask = 1 << firstOneIdx;
+    xuWithOriginalFirstOneSetToZero = xu - firstOneMask;
+    // Align bits after firstOneIdx in x to the fractional in the final result
+    if (firstOneIdx <= 23) {
+        // There are no more than 23 bits avaiable
+        // The first bit starts are indix (firstOneIdx - 1)
+        // Should be moved to index 22
+        frac = xuWithOriginalFirstOneSetToZero << (23 - firstOneIdx);
+    } else {
+        // More than 23 bits, need to do rounding
+        // Guard bit: Least significant bit of result
+        // Round bit: 1st bit that would be removed
+        // Sticky bit: OR of bits after round bit.
+        roundBitIdx = firstOneIdx - 24;
+        roundBit = (xu >> roundBitIdx) & 1;
+
+        // Bits BEHIND(not including) the first bit of one would be
+        // fit into significand
+        frac = xuWithOriginalFirstOneSetToZero >> (firstOneIdx - 23);
+
+        if (roundBit) {
+            // Round bit is 1, need to check sticky bits
+            stickyBitSource = (xu << (32 - roundBitIdx));
+            if (stickyBitSource) {
+                // More than half
+                frac = frac + 1;
+            } else {
+                // Exactly half, check the bit before roundBit
+                // Check the bit before the roundBit
+                guardBit = (xu >> (roundBitIdx + 1)) & 1;
+                if (guardBit) {
+                    frac = frac + 1;
+                }
+            }
+        }
+    }
+    exp = firstOneIdx + bias;
+    return xu ? signBit + (exp << 23) + frac : 0;
 }
 /* 
  * float_f2i - Return bit-level equivalent of expression (int) f
