@@ -341,8 +341,8 @@ unsigned float_i2f(int x) {
   expo = 32+127;
   //find the first 1 in x by right shift until meeting the first 1
   //find expoonential 
-  while(!(x&0x80000000)&&(expo>127)){
-    x<<=1;
+  for(;(expo>=127) && !(x&0x80000000);){
+    x=x<<1;
     expo-=1;
   }
   x<<=1;
