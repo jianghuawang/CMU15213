@@ -334,11 +334,12 @@ unsigned float_twice(unsigned uf) {
 unsigned float_i2f(int x) {
   if(!x)  
     return 0x00000000;
-  unsigned sign = x & 0x80000000;
+  int sign = x & 0x80000000;
   if(sign)
     x = ~x + 1; 
-  unsigned expo = 32+127;
-  //find the first 1 in x and also find expoonential
+  int expo = 32+127;
+  //find the first 1 in x by right shift until meeting the first 1
+  //find expoonential 
   while(!(x&0x80000000)&&(expo>127)){
     x<<=1;
     expo-=1;
@@ -347,10 +348,10 @@ unsigned float_i2f(int x) {
   expo-=1;
   if(!(expo^0xFF))
     return (sign | 0x7F800000);
-  unsigned frac=(x>>9)&(0x7FFFFF);
+  int frac=(x>>9)&(0x7FFFFF);
   if(x&0x100)
     frac+=0x1;
-  unsigned newValue=frac+(expo<<23)+sign;
+  int newValue=frac+(expo<<23)+sign;
   return newValue;
 }
 /* 
