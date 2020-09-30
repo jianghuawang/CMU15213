@@ -333,20 +333,20 @@ unsigned float_twice(unsigned uf) {
  */
  unsigned float_i2f(int x) {
    int expo,sign,newValue,frac,rest;
-   unsigned absX;
+   unsigned absX,signBitMask;
+   signBitMask=0x80000000;
    if(!x)  
      return 0x00000000;
-   sign = x & 0x80000000;
+   sign = x & signBitMask;
    absX=sign?(~x+1):x;
-   expo = 32+127;
+   expo = 31+127;
    //find the first 1 in x by right shift until meeting the first 1
    //find expoonential 
-   for(;(expo>127) & !(absX&0x80000000);){
-     absX=absX<<1;
+   while(!(absX&signBitMask)&&(expo>127)){
+     absX<<=1;
      expo-=1;
    }
    absX<<=1;
-   expo-=1;
    frac=(absX>>9)&(0x7FFFFF);
    rest=(absX&0x1FF);
    if(rest>>8){
@@ -373,5 +373,13 @@ unsigned float_twice(unsigned uf) {
  *   Rating: 4
  */
 int float_f2i(unsigned uf) {
-  return 2;
+  int sign = uf & 0x80000000;
+  int inf = 0x7F800000;
+  int expo = ((uf & inf)>>23);
+  int frac = uf&0x700000;
+  if(expo^0xFF || expo>=32)
+    return 0x80000000u;
+  else if(!expo|| expo<-1)
+    return 0;
+  
 }
