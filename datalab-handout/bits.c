@@ -331,35 +331,70 @@ unsigned float_twice(unsigned uf) {
  *   Max ops: 30
  *   Rating: 4
  */
- unsigned float_i2f(int x) {
-   int expo,sign,newValue,frac,rest;
-   unsigned absX,signBitMask;
-   signBitMask=0x80000000;
-   if(!x)  
-     return 0x00000000;
-   sign = x & signBitMask;
-   absX=sign?(~x+1):x;
-   expo = 31+127;
-   //find the first 1 in x by right shift until meeting the first 1
-   //find expoonential 
-   while(!(absX&signBitMask)&&(expo>127)){
-     absX<<=1;
-     expo-=1;
-   }
-   absX<<=1;
-   frac=(absX>>9)&(0x7FFFFF);
-   rest=(absX&0x1FF);
-   if(rest>>8){
-     if(rest^0x100)
-       frac+=0x1;
-     else if((absX&0x200)){
-       frac+=0x1;
-     }
-   }
-   newValue=frac+(expo<<23)+sign;
-   return newValue;
- }
-
+//  unsigned float_i2f(int x) {
+//    int expo,sign,newValue,frac,rest;
+//    unsigned absX,signBitMask;
+//    signBitMask=0x80000000;
+//    if(!x)  
+//      return 0x00000000;
+//    sign = x & signBitMask;
+//    absX=sign?(~x+1):x;
+//    expo = 31+127;
+//    //find the first 1 in x by right shift until meeting the first 1
+//    //find expoonential 
+//    while(!(absX&signBitMask)&&(expo>127)){
+//      absX<<=1;
+//      expo-=1;
+//    }
+//    absX<<=1;
+//    frac=(absX>>9)&(0x7FFFFF);
+//    rest=(absX&0x1FF);
+//    if(rest>>8){
+//      if(rest^0x100)
+//        frac+=0x1;
+//      else if((absX&0x200)){
+//        frac+=0x1;
+//      }
+//    }
+//    newValue=frac+(expo<<23)+sign;
+//    return newValue;
+//  }
+unsigned float_i2f(int x) {
+    int expo,sign,frac,rest,lastSigBitMask,lastSigBit,discardNum,mid;
+    unsigned absX,signBitMask,temp;
+    signBitMask=0x80000000;
+    if(!x)  
+      return 0x00000000;
+    sign = x & signBitMask;
+    absX=sign?-x:x;
+    expo = 31;
+    //find the first 1 in x by right shift until meeting the first 1
+    //find expoonential 
+    temp = absX;
+    while(!(temp&signBitMask)&&(expo>0)){
+      temp<<=1;
+      expo-=1;
+    }
+    if(expo<23){
+      frac= absX << (23-expo);
+      frac &= 0x7FFFFF;
+    }
+    else{
+      discardNum = expo-23;
+      lastSigBitMask=1<<discardNum;
+      rest = absX & (lastSigBitMask-1);
+      lastSigBit=absX & lastSigBitMask;
+      frac = (absX >> discardNum)&0x7FFFFF;
+      mid = lastSigBitMask>>1;
+      if(rest>>(discardNum-1)){
+        if(rest^mid)
+          frac+=1;
+        else if(lastSigBit)
+          frac+=1;
+      }
+    }
+    return sign + ((expo+127)<<23) + frac;
+}
 /* 
  * float_f2i - Return bit-level equivalent of expression (int) f
  *   for floating point argument f.
@@ -377,6 +412,8 @@ int float_f2i(unsigned uf) {
   unsigned expo = ((uf & 0x7F800000)>>23);
   int E = expo-127;
   int frac = (uf&0x7FFFFF)|(1<<23);
+  //due to the fact that in integer's range, only Tmin have exp larger than 30 and its
+  //binary representation is also 0x80000000(out of range) so we can write the condition like this.
   if(E>30)
     return 0x80000000u;
   else if(E<0)
