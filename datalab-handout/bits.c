@@ -286,6 +286,10 @@ int logicalNeg(int x) {
  *  Rating: 4
  */
 int howManyBits(int x) {
+  //can't do
+  int sign = (x>>31)&0x1;
+  int absX = ((~sign+1) & (~x+1))|(!sign & x);
+
   return 0;
 }
 //float
@@ -310,10 +314,11 @@ unsigned float_twice(unsigned uf) {
   //handle NaN and Infinity and +-0
   if((!(expo^inf)) || (!(expo^0) && !frac))
     return uf;
-  //handle denormalized value
+  //handle denormalized value(shift left the fraction part by 1)
   else if(!(expo^0)&& !!frac){
     return (uf^frac)|(frac<<1);
   }
+  //handle normalized value(add 1 to the exponential part)
   else{
     unsigned newValue=(uf^expo)|(expo+0x00800000);
     //check if overflow or underflow
@@ -331,6 +336,7 @@ unsigned float_twice(unsigned uf) {
  *   Max ops: 30
  *   Rating: 4
  */
+// original methods, work perfecly fine in btest but fail in BDD checkers (still can't figure out)
 //  unsigned float_i2f(int x) {
 //    int expo,sign,newValue,frac,rest;
 //    unsigned absX,signBitMask;
@@ -368,13 +374,13 @@ unsigned float_i2f(int x) {
     sign = x & signBitMask;
     absX=sign?-x:x;
     expo = 31;
-    //find the first 1 in x by right shift until meeting the first 1
-    //find expoonential 
+    //find the exponential part by right shift until meeting the first 1
     temp = absX;
     while(!(temp&signBitMask)&&(expo>0)){
       temp<<=1;
       expo-=1;
     }
+    //if the exponential is less than 23, then left shift the part after first 1 we found before
     if(expo<23){
       frac= absX << (23-expo);
       frac &= 0x7FFFFF;
@@ -418,6 +424,7 @@ int float_f2i(unsigned uf) {
     return 0x80000000u;
   else if(E<0)
     return 0;
+  //round to zero is just like round down for positive intgers(right shift is rounding down)
   if(E<23)
     frac>>=(23-E);
   else
