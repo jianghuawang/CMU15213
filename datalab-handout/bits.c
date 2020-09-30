@@ -331,6 +331,7 @@ unsigned float_twice(unsigned uf) {
  *   Max ops: 30
  *   Rating: 4
  */
+// original methods, work perfecly fine in btest but fail in BDD checkers (still can't figure out)
 //  unsigned float_i2f(int x) {
 //    int expo,sign,newValue,frac,rest;
 //    unsigned absX,signBitMask;
@@ -418,6 +419,7 @@ int float_f2i(unsigned uf) {
     return 0x80000000u;
   else if(E<0)
     return 0;
+  //round to zero is just like round down for positive intgers(right shift is rounding down)
   if(E<23)
     frac>>=(23-E);
   else
