@@ -373,31 +373,17 @@ unsigned float_twice(unsigned uf) {
  *   Rating: 4
  */
 int float_f2i(unsigned uf) {
-  int roundIndex;
   int sign = uf & 0x80000000;
-  int inf = 0x7F800000;
-  unsigned expo = ((uf & inf)>>23);
-  int expoAfterBias = expo-127;
+  unsigned expo = ((uf & 0x7F800000)>>23);
+  int E = expo-127;
   int frac = (uf&0x7FFFFF)|(1<<23);
-  int restBitMask;
-  int restBit;
-  if(!(expo^0xFF) || expoAfterBias>31)
+  if(E>30)
     return 0x80000000u;
-  else if(!expo|| expoAfterBias<0)
+  else if(E<0)
     return 0;
-  if(expoAfterBias<23){
-    roundIndex=23-expoAfterBias;
-    restBitMask=(1<<roundIndex)-1;
-    restBit=frac&restBitMask;
-    frac=frac>>roundIndex;
-    if(restBit>(1<<(roundIndex-1)))
-      frac+=1;
-  }
-  else{
-    roundIndex=expoAfterBias-23;
-    frac=frac<<roundIndex;
-  }
-  if(sign)
-    return -frac;
-  return frac;
+  if(E<23)
+    frac>>=(23-E);
+  else
+    frac<<=(E-23);
+  return sign?-frac:frac;
 }
