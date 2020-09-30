@@ -381,5 +381,5 @@ int float_f2i(unsigned uf) {
     return 0x80000000u;
   else if(!expo|| expo<-1)
     return 0;
-  
+  return 2; 
 }
