@@ -1,5 +1,5 @@
 phase1
----
+---(we can directly find the number of chars via the string length functions and the storing address of the correct string)
 hex code:
 426f7264
 65722072
@@ -16,3 +16,10 @@ hex code:
 7465722e
 
 Border relations with Canada have never been better.
+
+
+phase2(we know read_six_numbers split our string into 6 parts, and in the phase_2 function, the function first check if the first number is 1, and then use a while loop to check if the current value is 2 times the previous value )
+---
+1 2 4 8 16 32 
+
+
