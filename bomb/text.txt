@@ -23,3 +23,10 @@ phase2(we know read_six_numbers split our string into 6 parts, and in the phase_
 1 2 4 8 16 32 
 
 
+phase3(from the argument number, we first decide there should be 2 number, and the first one must be larger than 1. The difficulties comes from reading the jump table(the one we learn in switch statement))
+---
+2 707(there may be other answer there)
+
+
+phase4()
+---
