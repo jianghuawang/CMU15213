@@ -25,8 +25,9 @@ phase2(we know read_six_numbers split our string into 6 parts, and in the phase_
 
 phase3(from the argument number, we first decide there should be 2 number, and the first one must be larger than 1. The difficulties comes from reading the jump table(the one we learn in switch statement))
 ---
-2 707(there may be other answer there)
+2 707	(there may be other answers out there)
 
 
-phase4()
+phase4(just as the last one, we know we should have two numbers after the sscanf function(the comparision betwen 0x2 and %rax), and the first number should be less than 0xe. In the function 4, I am not very sure what the function is doing(it is recursion) but if I have the first number equal to %ecx, I can get out the function with a return value 0, which is exactly what I want. The second number is easy to get(the comparision).)
 ---
+7 0
