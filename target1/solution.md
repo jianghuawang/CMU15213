@@ -56,3 +56,17 @@ movb $0x00,0x8(%rdi)
 pushq $0x4018fa
 ret
 ```
+
+## RTARGET Level 2
+---
+most important thing:
+
+1. use part of the code to reach our goal, some number can  become operations.
+2. popq is extremely useful, we can input number and have register get the that number using pop.
+
+First we have %rax set to 0x59b997fa using pop, and then movq %rax's value to %rdi, and then go to touch2.
+
+setval_426 and getval_280 contains the code we want.
+
+## RTARGET Level 3
+---
