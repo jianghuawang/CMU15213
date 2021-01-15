@@ -37,7 +37,7 @@ int main(int argc,char* argv[])
 void intializeCache(int S,int E){
     cache=(CacheLine**)malloc(S*sizeof(CacheLine*));
     for(int i=0;i<S;i++)
-        cache[i]=(CacheLine*)calloc(E,sizeof(CacheLine));//we want each CachLine has its valid set to 0, so we call calloc here.
+        cache[i]=(CacheLine*)calloc(E,sizeof(CacheLine));//we want each CachLine has its valid set to 0 and counter set to 0, so we call calloc here.
 }
 void freeCache(int S){
     for(int i=0;i<S;i++)
@@ -77,11 +77,16 @@ void parse(int argc,char* argv[],int *verbal,int *bb,int *sb,int* E){
 }
 void run(int verbal,int bb,int E){
     FILE *file=fopen(fileName,"r");
+    if(file==NULL){
+        fprintf(stderr,"error: no a valid file\n");
+        exit(1);
+    }
     char operation[2];
     int size;
     long long address,tag;
     unsigned long long stIndex;
     CacheLine* set;
+    //for print usage
     char hitString[]=" hit";
     char missString[]=" miss";
     char evictionString[]=" eviction";
@@ -99,6 +104,8 @@ void run(int verbal,int bb,int E){
         int hit=0;
         int miss=0;
         int eviction=0;
+        //single for loop to check if there is hit, and also find the LRU line if there is no hit.
+        //the LRU line will be the leftmost empty line if there is empty space in the set.
         for(int i=0;i<E;i++){
             if(set[i].valid&&set[i].tag==tag){
                 hits+=(oper=='M')?2:1;
