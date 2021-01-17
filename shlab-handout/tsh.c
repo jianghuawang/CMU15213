@@ -392,7 +392,6 @@ void sigchld_handler(int sig)
         if(pid==fgPid)fg_flag=pid;
         if(WIFEXITED(status))deletejob(jobs,pid);
         else if(WIFSIGNALED(status)){
-            deletejob(jobs,pid);
             if(write(1,"Job [",5)!=5)exit(1);
             int jSize=itoa(pid2jid(pid),jobStr);
             if(write(1,jobStr,jSize)!=jSize)exit(1);
@@ -403,6 +402,7 @@ void sigchld_handler(int sig)
             int sSize=itoa(WTERMSIG(status),signal);
             if(write(1,signal,sSize)!=sSize)exit(1);
             if(write(1,"\n",1)!=1)exit(1);
+            deletejob(jobs,pid);
         }
         else if(WIFSTOPPED(status)){
             struct job_t *job=getjobpid(jobs,pid);
