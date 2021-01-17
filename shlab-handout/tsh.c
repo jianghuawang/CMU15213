@@ -163,7 +163,6 @@ int main(int argc, char **argv)
  * background children don't receive SIGINT (SIGTSTP) from the kernel
  * when we type ctrl-c (ctrl-z) at the keyboard.  
 */
-pid_t fgPid;
 void eval(char *cmdline) 
 {
     sigset_t mask,maskAll,prev;
@@ -176,9 +175,8 @@ void eval(char *cmdline)
     int bg=parseline(buf,argv);
     pid_t pid;
     if(argv[0]==NULL)return;
-    fgPid=0;
-    sigprocmask(SIG_BLOCK,&mask,&prev);
     if(!builtin_cmd(argv)){
+        sigprocmask(SIG_BLOCK,&mask,&prev);
         if((pid=fork())==0){
             sigprocmask(SIG_SETMASK,&prev,NULL);
             setpgid(0,0);
@@ -195,9 +193,6 @@ void eval(char *cmdline)
             printf("[%d] (%d) %s",pid2jid(pid),pid,cmdline);
         sigprocmask(SIG_SETMASK,&prev,NULL);
     }
-    if(fgPid)
-        waitfg(fgPid);
-    sigprocmask(SIG_SETMASK,&prev,NULL);
     return;
 }
 
@@ -270,7 +265,11 @@ int builtin_cmd(char **argv)
         return 1;
     }
     else if(!strcmp(argv[0],"jobs")){
+        sigset_t mask,prev;
+        sigfillset(&mask);
+        sigprocmask(SIG_BLOCK,&mask,&prev);
         listjobs(jobs);
+        sigprocmask(SIG_SETMASK,&prev,NULL);
         return 1;
     }
     return 0;     /* not a builtin command */
@@ -316,7 +315,7 @@ void do_bgfg(char **argv)
         else{
             if(job->state==ST)kill(-(job->pid),SIGCONT);
             job->state=FG;
-            fgPid=job->pid;
+            waitfg(job->pid);
         }
     }
     sigprocmask(SIG_SETMASK,&prev,NULL);
@@ -344,31 +343,31 @@ void waitfg(pid_t pid)
  * Signal handlers
  *****************/
 int itoa(int value,char *ptr)
-     {
-        int count=0,temp;
-        if(ptr==NULL)
-            return 0;   
-        if(value==0)
-        {   
-            *ptr='0';
-            return 1;
-        }
+{
+    int count=0,temp;
+    if(ptr==NULL)
+        return 0;   
+    if(value==0)
+    {   
+        *ptr='0';
+        return 1;
+    }
 
-        if(value<0)
-        {
-            value*=(-1);    
-            *ptr++='-';
-            count++;
-        }
-        for(temp=value;temp>0;temp/=10,ptr++);
-        *ptr='\0';
-        for(temp=value;temp>0;temp/=10)
-        {
-            *--ptr=temp%10+'0';
-            count++;
-        }
-        return count;
-     }
+    if(value<0)
+    {
+        value*=(-1);    
+        *ptr++='-';
+        count++;
+    }
+    for(temp=value;temp>0;temp/=10,ptr++);
+    *ptr='\0';
+    for(temp=value;temp>0;temp/=10)
+    {
+        *--ptr=temp%10+'0';
+        count++;
+    }
+    return count;
+}
 /* 
  * sigchld_handler - The kernel sends a SIGCHLD to the shell whenever
  *     a child job terminates (becomes a zombie), or stops because it
@@ -387,36 +386,37 @@ void sigchld_handler(int sig)
     char pidStr[12];
     char signal[12];
     sigprocmask(SIG_BLOCK,&mask,&prev);
-    while((pid=waitpid(-1,&status,WNOHANG|WUNTRACED))!=-1 && pid!=0){
-        // if(!pid)break;
+    while((pid=waitpid(-1,&status,WNOHANG|WUNTRACED))>0){
         if(pid==fgPid)fg_flag=pid;
         if(WIFEXITED(status))deletejob(jobs,pid);
         else if(WIFSIGNALED(status)){
-            if(write(1,"Job [",5)!=5)exit(1);
+            //call to printf is not allowed because if main routine is using the printf, 
+            //then it will create a dead lock
+            if(write(1,"Job [",5)!=5)_exit(1);
             int jSize=itoa(pid2jid(pid),jobStr);
-            if(write(1,jobStr,jSize)!=jSize)exit(1);
-            if(write(1,"] (",3)!=3)exit(1);
+            if(write(1,jobStr,jSize)!=jSize)_exit(1);
+            if(write(1,"] (",3)!=3)_exit(1);
             int pSize=itoa(pid,pidStr);
-            if(write(1,pidStr,pSize)!=pSize)exit(1);
-            if(write(1,") terminated by signal ",23)!=23)exit(1);
+            if(write(1,pidStr,pSize)!=pSize)_exit(1);
+            if(write(1,") terminated by signal ",23)!=23)_exit(1);
             int sSize=itoa(WTERMSIG(status),signal);
-            if(write(1,signal,sSize)!=sSize)exit(1);
-            if(write(1,"\n",1)!=1)exit(1);
+            if(write(1,signal,sSize)!=sSize)_exit(1);
+            if(write(1,"\n",1)!=1)_exit(1);
             deletejob(jobs,pid);
         }
         else if(WIFSTOPPED(status)){
             struct job_t *job=getjobpid(jobs,pid);
             job->state=ST;
-            if(write(1,"Job [",5)!=5)exit(1);
+            if(write(1,"Job [",5)!=5)_exit(1);
             int jSize=itoa(pid2jid(pid),jobStr);
-            if(write(1,jobStr,jSize)!=jSize)exit(1);
-            if(write(1,"] (",3)!=3)exit(1);
+            if(write(1,jobStr,jSize)!=jSize)_exit(1);
+            if(write(1,"] (",3)!=3)_exit(1);
             int pSize=itoa(pid,pidStr);
-            if(write(1,pidStr,pSize)!=pSize)exit(1);
-            if(write(1,") stopped by signal ",21)!=21)exit(1);
+            if(write(1,pidStr,pSize)!=pSize)_exit(1);
+            if(write(1,") stopped by signal ",21)!=21)_exit(1);
             int sSize=itoa(WSTOPSIG(status),signal);
-            if(write(1,signal,sSize)!=sSize)exit(1);
-            if(write(1,"\n",1)!=1)exit(1);
+            if(write(1,signal,sSize)!=sSize)_exit(1);
+            if(write(1,"\n",1)!=1)_exit(1);
         }
     }
     sigprocmask(SIG_SETMASK,&prev,NULL);
