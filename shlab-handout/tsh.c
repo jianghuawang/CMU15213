@@ -391,7 +391,7 @@ void sigchld_handler(int sig)
         if(WIFEXITED(status))deletejob(jobs,pid);
         else if(WIFSIGNALED(status)){
             //call to printf is not allowed because if main routine is using the printf, 
-            //then it will create a dead lock
+            //then it will create a dead lock.
             if(write(1,"Job [",5)!=5)_exit(1);
             int jSize=itoa(pid2jid(pid),jobStr);
             if(write(1,jobStr,jSize)!=jSize)_exit(1);
