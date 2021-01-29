@@ -35,7 +35,7 @@ team_t team = {
     ""
 };
 
-void mm_heapchecker(int lineno);
+int mm_check(int lineno);
 
 static void *extend_heap(size_t size,int allocated);
 
@@ -58,9 +58,11 @@ static void *find_fit(size_t size,int* last_allocated_ptr);
 
 #define DSIZE 8 /* Double word size (bytes) */
 
+#define TSIZE 12 /* Triple word size (bytes) */
+
 #define QSIZE 16 /* Quadruple word size (bytes) */
 
-#define SMEST_SIZE 24 /* smallest size of a block(contain a header, a footer, a precessor, a sucessor) */
+//#define SMEST_SIZE 16 /* smallest size of a block(contain a header, a footer, a precessor, a sucessor) */
 
 #define PREV_ALLOC 2 /* the bit representing that the previous block is allocated*/
 
@@ -92,9 +94,9 @@ static void *find_fit(size_t size,int* last_allocated_ptr);
 
 /*Get precessor and successor free block in the explicit Linkedlist */
 #define PRECESSOR(bp) (*((char**)bp))
-#define SUCCESSOR(bp) (*((char**)(bp+8)))
+#define SUCCESSOR(bp) (*(((char**)bp)+1))
 /*check the heap*/
-//#define heapchecker(lineno) (mm_heapchecker(lineno))
+//#define heapchecker(lineno) (mm_check(lineno))
 #define heapchecker(lineno)
 
 static void *head=NULL;
@@ -137,9 +139,10 @@ static void *place(char* bp,size_t size){
     //put prev_alloc bit on the next block
     PUT_PREV_ALLOC(HDRP(NEXT_BLKP(bp)));
     size_t curr_size=GET_SIZE(HDRP(bp));
-    if(curr_size<size+SMEST_SIZE){
+    if(curr_size<size+QSIZE){
         //only change the state of the header, the footer will be used by the application
         PUT(HDRP(bp),PACK(curr_size,1,GET_PREV_ALLOC(HDRP(bp))));
+        if(head==bp)head=SUCCESSOR(bp);
         if(PRECESSOR(bp))SUCCESSOR(PRECESSOR(bp))=SUCCESSOR(bp);
         if(SUCCESSOR(bp))PRECESSOR(SUCCESSOR(bp))=PRECESSOR(bp);
         return bp;
@@ -158,7 +161,7 @@ static void *find_fit(size_t size,int* last_allocated_ptr){
     while(!bp){
         curr_size=GET_SIZE(HDRP(bp));
         if(curr_size>=size)return bp;
-        if(!GET_SIZE(HDRP(NEXT_BLKP(bp))))*last_allocated_ptr=0;
+        if(!(GET_SIZE(HDRP(NEXT_BLKP(bp)))))*last_allocated_ptr=0;
         bp=SUCCESSOR(bp);
     }
     return NULL;
@@ -175,7 +178,7 @@ void *mm_malloc(size_t size)
 
     if(size==0)return NULL;
 
-    if(size<=(QSIZE+4))asize=3*DSIZE;
+    if(size<=TSIZE)asize=QSIZE;
     else{
         size-=4;
         asize=8+ALIGN(size);
@@ -267,8 +270,9 @@ void *mm_realloc(void *ptr, size_t size)
     return NULL;
 }
 
-
-
+int mm_check(int lineno){
+    
+}
 
 
 
