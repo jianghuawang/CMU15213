@@ -4,6 +4,8 @@
  * happens, if either previous or next block is in the free list, the new one will
  * not be inserted in the front of the list. Score: 83
  * 2) Only change first-fit to next fit. Score: 82
+ * 3) Always put the new free block on the front of the list(first-fit). Score: 83
+ * (the previous method have better space utilization for every test but result is not shown in the score.)
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -161,8 +163,8 @@ static void place(char* bp,size_t size){
         PUT(HDRP(NEXT_BLKP(bp)),PACK(left_size,0));
         SETP(PREDP(NEXT_BLKP(bp)),PRED(bp));
         SETP(SUCCP(NEXT_BLKP(bp)),SUCC(bp));
-        if(head==bp)head=NEXT_BLKP(bp);
         // curr_pos=NEXT_BLKP(bp);
+        if(head==bp)head=NEXT_BLKP(bp);
         if(PRED(bp)!=NULL)
             SETP(SUCCP(PRED(bp)),NEXT_BLKP(bp));
         if(SUCC(bp)!=NULL)
@@ -225,29 +227,13 @@ static void *coalesce(void *bp){
     else if(prev_alloc && !next_alloc){
         // if(curr_pos==NEXT_BLKP(bp))curr_pos=bp;
         size+=GET_SIZE(HDRP(NEXT_BLKP(bp)));
-        // SETP(PREDP(bp),PRED(NEXT_BLKP(bp)));
-        // SETP(SUCCP(bp),SUCC(NEXT_BLKP(bp)));
-        // if(head==NEXT_BLKP(bp))head=(char*)bp;
-        // if(PRED(NEXT_BLKP(bp))!=NULL)
-        //     SETP(SUCCP(PRED(NEXT_BLKP(bp))),bp);
-        // if(SUCC(NEXT_BLKP(bp))!=NULL)
-        //     SETP(PREDP(SUCC(NEXT_BLKP(bp))),bp);
-        if(head==NEXT_BLKP(bp)){
-            SETP(PREDP(bp),NULL);
-            SETP(SUCCP(bp),SUCC(NEXT_BLKP(bp)));
-            if(SUCC(NEXT_BLKP(bp))!=NULL)
-                SETP(PREDP(SUCC(NEXT_BLKP(bp))),bp);
-        }
-        else{
-            SETP(SUCCP(PRED(NEXT_BLKP(bp))),SUCC(NEXT_BLKP(bp)));
-            if(SUCC(NEXT_BLKP(bp))!=NULL)
-                SETP(PREDP(SUCC(NEXT_BLKP(bp))),PRED(NEXT_BLKP(bp)));
-            SETP(PREDP(bp),NULL);
-            SETP(SUCCP(bp),head);
-            if(head)
-                SETP(PREDP(head),bp);
-        }
-        head=bp;
+        SETP(PREDP(bp),PRED(NEXT_BLKP(bp)));
+        SETP(SUCCP(bp),SUCC(NEXT_BLKP(bp)));
+        if(head==NEXT_BLKP(bp))head=(char*)bp;
+        if(PRED(NEXT_BLKP(bp))!=NULL)
+            SETP(SUCCP(PRED(NEXT_BLKP(bp))),bp);
+        if(SUCC(NEXT_BLKP(bp))!=NULL)
+            SETP(PREDP(SUCC(NEXT_BLKP(bp))),bp);
         PUT(HDRP(bp),PACK(size,0));
         PUT(FTRP(bp),PACK(size,0));
     }
@@ -256,50 +242,105 @@ static void *coalesce(void *bp){
         PUT(FTRP(bp),PACK(size,0));
         PUT(HDRP(PREV_BLKP(bp)),PACK(size,0));
         bp=PREV_BLKP(bp);
-        if(head!=bp){
-            SETP(SUCCP(PRED(bp)),SUCC(bp));
-            if(SUCC(bp)!=NULL)
-                SETP(PREDP(SUCC(bp)),PRED(bp));
-            SETP(PREDP(bp),NULL);
-            SETP(SUCCP(bp),head);
-            if(head)
-                SETP(PREDP(head),bp);
-            head=bp;
-        }
     }
     else{
         // if(curr_pos==NEXT_BLKP(bp))curr_pos=PREV_BLKP(bp);
         size+=(GET_SIZE(HDRP(NEXT_BLKP(bp)))+GET_SIZE(HDRP(PREV_BLKP(bp))));
-        // if(head==NEXT_BLKP(bp))head=SUCC(NEXT_BLKP(bp));
-        if(head==NEXT_BLKP(bp)){
-            head=SUCC(head);
-            if(head && head==PREV_BLKP(bp))
-                head=SUCC(head);
-        }
-        else if(head==PREV_BLKP(bp)){
-            head=SUCC(head);
-            if(head && head==NEXT_BLKP(bp))
-                head=SUCC(head);
-        }
+        if(head==NEXT_BLKP(bp))head=SUCC(NEXT_BLKP(bp));
         if(PRED(NEXT_BLKP(bp))!=NULL)
             SETP(SUCCP(PRED(NEXT_BLKP(bp))),SUCC(NEXT_BLKP(bp)));
         if(SUCC(NEXT_BLKP(bp))!=NULL)
             SETP(PREDP(SUCC(NEXT_BLKP(bp))),PRED(NEXT_BLKP(bp)));
-        if(PRED(PREV_BLKP(bp))!=NULL)
-            SETP(SUCCP(PRED(PREV_BLKP(bp))),SUCC(PREV_BLKP(bp)));
-        if(SUCC(PREV_BLKP(bp))!=NULL)
-            SETP(PREDP(SUCC(PREV_BLKP(bp))),PRED(PREV_BLKP(bp)));
         PUT(HDRP(PREV_BLKP(bp)),PACK(size,0));
         PUT(FTRP(NEXT_BLKP(bp)),PACK(size,0));
         bp=PREV_BLKP(bp);
-        SETP(PREDP(bp),NULL);
-        SETP(SUCCP(bp),head);
-        if(head)
-            SETP(PREDP(head),bp);
-        head=bp;
     }
     return bp;
 }
+
+// static void *coalesce(void *bp){
+//     size_t prev_alloc=GET_ALLOC(FTRP(PREV_BLKP(bp)));
+//     size_t next_alloc=GET_ALLOC(HDRP(NEXT_BLKP(bp)));
+//     size_t size=GET_SIZE(HDRP(bp));
+//     if(prev_alloc && next_alloc){
+//         SETP(PREDP(bp),NULL);
+//         SETP(SUCCP(bp),head);
+//         if(head)
+//             SETP(PREDP(head),bp);
+//         head=bp;
+//         return bp;
+//     }
+//     else if(prev_alloc && !next_alloc){
+//         // if(curr_pos==NEXT_BLKP(bp))curr_pos=bp;
+//         size+=GET_SIZE(HDRP(NEXT_BLKP(bp)));
+//         if(head==NEXT_BLKP(bp)){
+//             SETP(PREDP(bp),NULL);
+//             SETP(SUCCP(bp),SUCC(NEXT_BLKP(bp)));
+//             if(SUCC(NEXT_BLKP(bp))!=NULL)
+//                 SETP(PREDP(SUCC(NEXT_BLKP(bp))),bp);
+//         }
+//         else{
+//             SETP(SUCCP(PRED(NEXT_BLKP(bp))),SUCC(NEXT_BLKP(bp)));
+//             if(SUCC(NEXT_BLKP(bp))!=NULL)
+//                 SETP(PREDP(SUCC(NEXT_BLKP(bp))),PRED(NEXT_BLKP(bp)));
+//             SETP(PREDP(bp),NULL);
+//             SETP(SUCCP(bp),head);
+//             if(head)
+//                 SETP(PREDP(head),bp);
+//         }
+//         head=bp;
+//         PUT(HDRP(bp),PACK(size,0));
+//         PUT(FTRP(bp),PACK(size,0));
+//     }
+//     else if(!prev_alloc && next_alloc){
+//         size+=GET_SIZE(HDRP(PREV_BLKP(bp)));
+//         PUT(FTRP(bp),PACK(size,0));
+//         PUT(HDRP(PREV_BLKP(bp)),PACK(size,0));
+//         bp=PREV_BLKP(bp);
+//         if(head!=bp){
+//             SETP(SUCCP(PRED(bp)),SUCC(bp));
+//             if(SUCC(bp)!=NULL)
+//                 SETP(PREDP(SUCC(bp)),PRED(bp));
+//             SETP(PREDP(bp),NULL);
+//             SETP(SUCCP(bp),head);
+//             if(head)
+//                 SETP(PREDP(head),bp);
+//             head=bp;
+//         }
+//     }
+//     else{
+//         // if(curr_pos==NEXT_BLKP(bp))curr_pos=PREV_BLKP(bp);
+//         size+=(GET_SIZE(HDRP(NEXT_BLKP(bp)))+GET_SIZE(HDRP(PREV_BLKP(bp))));
+//         // if(head==NEXT_BLKP(bp))head=SUCC(NEXT_BLKP(bp));
+//         if(head==NEXT_BLKP(bp)){
+//             head=SUCC(head);
+//             if(head && head==PREV_BLKP(bp))
+//                 head=SUCC(head);
+//         }
+//         else if(head==PREV_BLKP(bp)){
+//             head=SUCC(head);
+//             if(head && head==NEXT_BLKP(bp))
+//                 head=SUCC(head);
+//         }
+//         if(PRED(NEXT_BLKP(bp))!=NULL)
+//             SETP(SUCCP(PRED(NEXT_BLKP(bp))),SUCC(NEXT_BLKP(bp)));
+//         if(SUCC(NEXT_BLKP(bp))!=NULL)
+//             SETP(PREDP(SUCC(NEXT_BLKP(bp))),PRED(NEXT_BLKP(bp)));
+//         if(PRED(PREV_BLKP(bp))!=NULL)
+//             SETP(SUCCP(PRED(PREV_BLKP(bp))),SUCC(PREV_BLKP(bp)));
+//         if(SUCC(PREV_BLKP(bp))!=NULL)
+//             SETP(PREDP(SUCC(PREV_BLKP(bp))),PRED(PREV_BLKP(bp)));
+//         PUT(HDRP(PREV_BLKP(bp)),PACK(size,0));
+//         PUT(FTRP(NEXT_BLKP(bp)),PACK(size,0));
+//         bp=PREV_BLKP(bp);
+//         SETP(PREDP(bp),NULL);
+//         SETP(SUCCP(bp),head);
+//         if(head)
+//             SETP(PREDP(head),bp);
+//         head=bp;
+//     }
+//     return bp;
+// }
 /*
  * mm_free - Freeing a block does nothing.
  */
