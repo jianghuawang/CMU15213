@@ -1,11 +1,14 @@
 /*
- * mm-naive.c - The fastest, least memory-efficient malloc package.
  * 1) Explicit list with first-fit,compulsory footer. Besides, when coalescence
  * happens, if either previous or next block is in the free list, the new one will
  * not be inserted in the front of the list. Score: 83
  * 2) Only change first-fit to next fit. Score: 82
  * 3) Always put the new free block on the front of the list(first-fit). Score: 83
  * (the previous method have better space utilization for every test but result is not shown in the score.)
+ * 4) Given first-fit and the first coalsece method, improve the realloc function(if the next block is free, then
+ * combine the current one with next one, and return the current ptr). have large improve on the last two test case
+ * but not great improve on the score. Score: 85
+ * 5) Haven try: make footer optional.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -367,7 +370,37 @@ void *mm_realloc(void *ptr, size_t size)
     }
     if(!ptr)return mm_malloc(size);
     size_t asize=8+ALIGN(size);
-    if(GET_SIZE(HDRP(ptr))>=asize)return ptr;
+    size_t free_size=GET_SIZE(HDRP(ptr));
+    if(free_size>=asize)return ptr;
+    free_size+=(!GET_ALLOC(HDRP(NEXT_BLKP(ptr))))?GET_SIZE(HDRP(NEXT_BLKP(ptr))):0;
+    if(free_size>=asize){
+        size_t left_size=free_size-asize;
+        if(left_size<QSIZE){
+            if(head==NEXT_BLKP(ptr))head=SUCC(head);
+            if(PRED(NEXT_BLKP(ptr)))
+                SETP(SUCCP(PRED(NEXT_BLKP(ptr))),SUCC(NEXT_BLKP(ptr)));
+            if(SUCC(NEXT_BLKP(ptr)))
+                SETP(PREDP(SUCC(NEXT_BLKP(ptr))),PRED(PREV_BLKP(ptr)));
+            PUT(HDRP(ptr),PACK(free_size,1));
+            PUT(FTRP(ptr),PACK(free_size,1));
+        }
+        else{
+            if(head==NEXT_BLKP(ptr))head=ptr+asize;
+            char *pred=PRED(NEXT_BLKP(ptr));
+            char *succ=SUCC(NEXT_BLKP(ptr));
+            PUT(HDRP(ptr),PACK(asize,1));
+            PUT(HDRP(ptr),PACK(asize,1));
+            PUT(HDRP(NEXT_BLKP(ptr)),PACK(left_size,0));
+            PUT(FTRP(NEXT_BLKP(ptr)),PACK(left_size,0));
+            SETP(PREDP(NEXT_BLKP(ptr)),pred);
+            SETP(SUCCP(NEXT_BLKP(ptr)),succ);
+            if(PRED(NEXT_BLKP(ptr)))
+                SETP(SUCCP(PRED(NEXT_BLKP(ptr))),NEXT_BLKP(ptr));
+            if(SUCC(NEXT_BLKP(ptr)))
+                SETP(PREDP(SUCC(NEXT_BLKP(ptr))),NEXT_BLKP(ptr));
+        }
+        return ptr;
+    }
     void *bp=mm_malloc(size);
     memcpy(bp,ptr,MIN(size,GET_SIZE(HDRP(ptr))));
     mm_free(ptr);
