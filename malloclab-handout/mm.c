@@ -157,13 +157,12 @@ static void place(char *bp,size_t size)
 {
     size_t curr_size=GET_SIZE(HDRP(bp));
     size_t left_size=curr_size-size;
+    delete_block(bp);
     if(left_size<QSIZE){
         PUT(HDRP(bp),PACK(curr_size,1));
         PUT(FTRP(bp),PACK(curr_size,1));
-        delete_block(bp);
     }
     else{
-        delete_block(bp);
         PUT(FTRP(bp),PACK(left_size,0));
         PUT(HDRP(bp),PACK(size,1));
         PUT(FTRP(bp),PACK(size,1));
@@ -222,14 +221,14 @@ static void *coalesce(void *bp)
     size_t next_alloc=GET_ALLOC(HDRP(NEXT_BLKP(bp)));
     size_t size=GET_SIZE(HDRP(bp));
     if(prev_alloc && next_alloc){
-        insert_block(bp);
+        PUT(HDRP(bp),PACK(size,0));
+        PUT(FTRP(bp),PACK(size,0));
     }
     else if(prev_alloc && !next_alloc){
         size+=GET_SIZE(HDRP(NEXT_BLKP(bp)));
         delete_block(NEXT_BLKP(bp));
         PUT(HDRP(bp),PACK(size,0));
         PUT(FTRP(bp),PACK(size,0));
-        insert_block(bp);
     }
     else if(!prev_alloc && next_alloc){
         size+=GET_SIZE(HDRP(PREV_BLKP(bp)));
@@ -237,7 +236,6 @@ static void *coalesce(void *bp)
         PUT(FTRP(bp),PACK(size,0));
         PUT(HDRP(PREV_BLKP(bp)),PACK(size,0));
         bp=PREV_BLKP(bp);
-        insert_block(bp);
     }
     else{
         size+=(GET_SIZE(HDRP(NEXT_BLKP(bp)))+GET_SIZE(HDRP(PREV_BLKP(bp))));
@@ -246,8 +244,8 @@ static void *coalesce(void *bp)
         PUT(HDRP(PREV_BLKP(bp)),PACK(size,0));
         PUT(FTRP(NEXT_BLKP(bp)),PACK(size,0));
         bp=PREV_BLKP(bp);
-        insert_block(bp);
     }
+    insert_block(bp);
     return bp;
 }
 
@@ -256,9 +254,6 @@ static void *coalesce(void *bp)
  */
 void mm_free(void *ptr)
 {  
-    size_t size=GET_SIZE(HDRP(ptr));
-    PUT(HDRP(ptr),PACK(size,0));
-    PUT(FTRP(ptr),PACK(size,0));
     coalesce(ptr);
     heapchecker(__LINE__);
 }
@@ -279,13 +274,12 @@ void *mm_realloc(void *ptr, size_t size)
     free_size+=(!GET_ALLOC(HDRP(NEXT_BLKP(ptr))))?GET_SIZE(HDRP(NEXT_BLKP(ptr))):0;
     if(free_size>=asize){
         size_t left_size=free_size-asize;
+        delete_block(NEXT_BLKP(ptr));
         if(left_size<QSIZE){
-            delete_block(NEXT_BLKP(ptr));
             PUT(HDRP(ptr),PACK(free_size,1));
             PUT(FTRP(ptr),PACK(free_size,1));
         }
         else{
-            delete_block(NEXT_BLKP(ptr));
             PUT(HDRP(ptr),PACK(asize,1));
             PUT(FTRP(ptr),PACK(asize,1));
             PUT(HDRP(NEXT_BLKP(ptr)),PACK(left_size,0));
