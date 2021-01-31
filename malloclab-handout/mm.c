@@ -8,7 +8,7 @@
  * 4) Given first-fit and the first coalsece method, improve the realloc function(if the next block is free, then
  * combine the current one with next one, and return the current ptr). have large improve on the last two test case
  * but not great improve on the score. Score: 85
- * 5) Haven try: make footer optional.
+ * 5) Given first-fit and the first coalesce method, use optional footer downgrade the space utilization. Score: 85
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -38,13 +38,13 @@ team_t team = {
 
 int mm_check(int lineno);
 
-static void *extend_heap(size_t size);
+static void *extend_heap(size_t size,size_t allocated);
 
 static void *coalesce(void *bp);
 
 static void place(char* bp,size_t size);
 
-static void *find_fit(size_t size);
+static void *find_fit(size_t size,size_t *allocated);
 
 /* single word (4) or double word (8) alignment */
 #define ALIGNMENT 8
@@ -59,11 +59,11 @@ static void *find_fit(size_t size);
 
 #define DSIZE 8 /* Double word size (bytes) */
 
-// #define TSIZE 12 /* Triple word size (bytes) */
+#define TSIZE 12 /* Triple word size (bytes) */
 
 #define QSIZE 16 /* Quadruple word size (bytes) */
 
-// #define PREV_ALLOC 2 /* the bit representing that the previous block is allocated*/
+#define PREV_ALLOC 2 /* the bit representing that the previous block is allocated*/
 
 #define CHUNKSIZE (1<<12) /*Extend heap by this amount(bytes) */
 
@@ -73,6 +73,7 @@ static void *find_fit(size_t size);
 
 /* Pack a size and allocated bit in to a word */
 #define PACK(size,alloc) ((size) | (alloc))
+#define PACK_ALLOC(size,alloc,prev) ((size) | (alloc) | (prev)) 
 
 /* Read and write a word at address p */
 #define GET(p) (*(unsigned int *)(p))
@@ -81,10 +82,11 @@ static void *find_fit(size_t size);
 /* Read the size and allocated fields from address p */
 #define GET_SIZE(p) (GET(p) & ~0x7)
 #define GET_ALLOC(p) (GET(p) & 0x1)
-// #define GET_PREV_ALLOC(p) (GET(p)& 0x2)
+#define GET_PREV_ALLOC(p) (GET(p)& 0x2)
 
-// #define PUT_PREV_ALLOC(p) ((*(unsigned int *)(p))|=0x2)
-// #define REMOVE_PREV_ALLOC(p)((*(unsigned int *)(p))&=(~0x2))
+#define PUT_PREV_ALLOC(p) ((*(unsigned int *)(p))|=0x2)
+#define REMOVE_PREV_ALLOC(p)((*(unsigned int *)(p))&=(~0x2))
+
 /* Given block ptr bp, compute address of its header and footer */
 #define HDRP(bp) ((char*)(bp)-WSIZE)
 #define FTRP(bp) ((char*)(bp)+GET_SIZE(HDRP(bp))-DSIZE)
@@ -123,10 +125,10 @@ int mm_init(void)
     if((ptr=mem_sbrk(4*WSIZE))==(void*)-1)
         return -1;
     PUT(ptr,0);
-    PUT(ptr+(WSIZE*1),PACK(DSIZE,1));
+    PUT(ptr+(WSIZE*1),PACK_ALLOC(DSIZE,1,PREV_ALLOC));
     PUT(ptr+(WSIZE*2),PACK(DSIZE,1));
-    PUT(ptr+(WSIZE*3),PACK(0,1));
-    if((head=extend_heap(CHUNKSIZE))==NULL)
+    PUT(ptr+(WSIZE*3),PACK_ALLOC(0,1,PREV_ALLOC));
+    if((head=extend_heap(CHUNKSIZE,PREV_ALLOC))==NULL)
         return -1;
     SETP(PREDP(head),NULL);
     SETP(SUCCP(head),NULL);
@@ -135,14 +137,14 @@ int mm_init(void)
     return 0;
 }
 /* extend the size of heap */
-static void *extend_heap(size_t size){
+static void *extend_heap(size_t size,size_t allocated){
     char *bp;
     size_t asize=ALIGN(size);
     if((long)(bp=mem_sbrk(asize))==-1)
         return NULL;
-    PUT(HDRP(bp),PACK(asize,0));
-    PUT(FTRP(bp),PACK(asize,0));
-    PUT(HDRP(NEXT_BLKP(bp)),PACK(0,1));
+    PUT(HDRP(bp),PACK_ALLOC(asize,0,allocated));  //the free block header
+    PUT(FTRP(bp),PACK(asize,0));  //the free block footer
+    PUT(HDRP(NEXT_BLKP(bp)),PACK_ALLOC(0,1,0)); //the epilogue header
     return coalesce(bp);
 }
 
@@ -150,8 +152,9 @@ static void place(char* bp,size_t size){
     size_t curr_size=GET_SIZE(HDRP(bp));
     size_t left_size=curr_size-size;
     if(left_size<QSIZE){
-        PUT(HDRP(bp),PACK(curr_size,1));
-        PUT(FTRP(bp),PACK(curr_size,1));
+        PUT(HDRP(bp),PACK_ALLOC(curr_size,1,PREV_ALLOC));
+        // PUT(FTRP(bp),PACK(curr_size,1));
+        PUT_PREV_ALLOC(HDRP(NEXT_BLKP(bp)));
         if(head==bp)head=SUCC(bp);
         // curr_pos=SUCC(bp);
         if(PRED(bp)!=NULL)
@@ -161,9 +164,8 @@ static void place(char* bp,size_t size){
     }
     else{
         PUT(FTRP(bp),PACK(left_size,0));
-        PUT(HDRP(bp),PACK(size,1));
-        PUT(FTRP(bp),PACK(size,1));
-        PUT(HDRP(NEXT_BLKP(bp)),PACK(left_size,0));
+        PUT(HDRP(bp),PACK_ALLOC(size,1,PREV_ALLOC));
+        PUT(HDRP(NEXT_BLKP(bp)),PACK_ALLOC(left_size,0,PREV_ALLOC));
         SETP(PREDP(NEXT_BLKP(bp)),PRED(bp));
         SETP(SUCCP(NEXT_BLKP(bp)),SUCC(bp));
         // curr_pos=NEXT_BLKP(bp);
@@ -175,13 +177,14 @@ static void place(char* bp,size_t size){
     }
     heapchecker(__LINE__);
 }
-static void *find_fit(size_t size){
+static void *find_fit(size_t size,size_t *allocated_ptr){
     // char* prev=curr_pos;
     char* bp=head;
     size_t curr_size;
     while(bp){
         curr_size=GET_SIZE(HDRP(bp));
         if(curr_size>=size)return bp;
+        if(!GET_SIZE(HDRP(NEXT_BLKP(bp))))*allocated_ptr=0;
         bp=SUCC(bp);
     }
     return NULL;
@@ -198,25 +201,26 @@ void *mm_malloc(size_t size)
 
     if(size==0)return NULL;
 
-    if(size<=DSIZE)asize=QSIZE;
-    else asize=8+ALIGN(size);
+    if(size<=TSIZE)asize=QSIZE;
+    else asize=8+ALIGN(size-4);
 
+    size_t allocated=PREV_ALLOC;
     /*Search the free list for a fit*/
-    if((bp=find_fit(asize))!=NULL){
+    if((bp=find_fit(asize,&allocated))!=NULL){
         place(bp,asize);
         return bp;
     }
 
     /* No fit found. Get more memory and place the block */
     extendsize=MAX(asize,CHUNKSIZE);
-    if((bp=extend_heap(extendsize))==NULL)
+    if((bp=extend_heap(extendsize,allocated))==NULL)
         return NULL;
     place(bp,asize);
     return bp;
 }
 
 static void *coalesce(void *bp){
-    size_t prev_alloc=GET_ALLOC(FTRP(PREV_BLKP(bp)));
+    size_t prev_alloc=GET_PREV_ALLOC(HDRP(bp));
     size_t next_alloc=GET_ALLOC(HDRP(NEXT_BLKP(bp)));
     size_t size=GET_SIZE(HDRP(bp));
     if(prev_alloc && next_alloc){
@@ -225,7 +229,6 @@ static void *coalesce(void *bp){
         if(head)
             SETP(PREDP(head),bp);
         head=bp;
-        return bp;
     }
     else if(prev_alloc && !next_alloc){
         // if(curr_pos==NEXT_BLKP(bp))curr_pos=bp;
@@ -237,13 +240,13 @@ static void *coalesce(void *bp){
             SETP(SUCCP(PRED(NEXT_BLKP(bp))),bp);
         if(SUCC(NEXT_BLKP(bp))!=NULL)
             SETP(PREDP(SUCC(NEXT_BLKP(bp))),bp);
-        PUT(HDRP(bp),PACK(size,0));
+        PUT(HDRP(bp),PACK_ALLOC(size,0,PREV_ALLOC));
         PUT(FTRP(bp),PACK(size,0));
     }
     else if(!prev_alloc && next_alloc){
         size+=GET_SIZE(HDRP(PREV_BLKP(bp)));
         PUT(FTRP(bp),PACK(size,0));
-        PUT(HDRP(PREV_BLKP(bp)),PACK(size,0));
+        PUT(HDRP(PREV_BLKP(bp)),PACK_ALLOC(size,0,PREV_ALLOC));
         bp=PREV_BLKP(bp);
     }
     else{
@@ -254,10 +257,11 @@ static void *coalesce(void *bp){
             SETP(SUCCP(PRED(NEXT_BLKP(bp))),SUCC(NEXT_BLKP(bp)));
         if(SUCC(NEXT_BLKP(bp))!=NULL)
             SETP(PREDP(SUCC(NEXT_BLKP(bp))),PRED(NEXT_BLKP(bp)));
-        PUT(HDRP(PREV_BLKP(bp)),PACK(size,0));
+        PUT(HDRP(PREV_BLKP(bp)),PACK_ALLOC(size,0,PREV_ALLOC));
         PUT(FTRP(NEXT_BLKP(bp)),PACK(size,0));
         bp=PREV_BLKP(bp);
     }
+    REMOVE_PREV_ALLOC(HDRP(NEXT_BLKP(bp)));
     return bp;
 }
 
@@ -351,7 +355,7 @@ void mm_free(void *ptr)
 {
     size_t size=GET_SIZE(HDRP(ptr));
     //clear the allocated bit
-    PUT(HDRP(ptr),PACK(size,0));
+    PUT(HDRP(ptr),PACK_ALLOC(size,0,GET_PREV_ALLOC(HDRP(ptr))));
     PUT(FTRP(ptr),PACK(size,0));
     SETP(PREDP(ptr),NULL);
     SETP(SUCCP(ptr),NULL);
@@ -381,16 +385,14 @@ void *mm_realloc(void *ptr, size_t size)
                 SETP(SUCCP(PRED(NEXT_BLKP(ptr))),SUCC(NEXT_BLKP(ptr)));
             if(SUCC(NEXT_BLKP(ptr)))
                 SETP(PREDP(SUCC(NEXT_BLKP(ptr))),PRED(PREV_BLKP(ptr)));
-            PUT(HDRP(ptr),PACK(free_size,1));
-            PUT(FTRP(ptr),PACK(free_size,1));
+            PUT(HDRP(ptr),PACK_ALLOC(free_size,1,GET_PREV_ALLOC(HDRP(ptr))));
         }
         else{
             if(head==NEXT_BLKP(ptr))head=ptr+asize;
             char *pred=PRED(NEXT_BLKP(ptr));
             char *succ=SUCC(NEXT_BLKP(ptr));
-            PUT(HDRP(ptr),PACK(asize,1));
-            PUT(HDRP(ptr),PACK(asize,1));
-            PUT(HDRP(NEXT_BLKP(ptr)),PACK(left_size,0));
+            PUT(HDRP(ptr),PACK_ALLOC(asize,1,GET_PREV_ALLOC(HDRP(ptr))));
+            PUT(HDRP(NEXT_BLKP(ptr)),PACK_ALLOC(left_size,0,PREV_ALLOC));
             PUT(FTRP(NEXT_BLKP(ptr)),PACK(left_size,0));
             SETP(PREDP(NEXT_BLKP(ptr)),pred);
             SETP(SUCCP(NEXT_BLKP(ptr)),succ);
