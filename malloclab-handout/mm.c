@@ -1,11 +1,15 @@
 /*
- * 1) segregated list
+ * 1) segregated list with total 10 list(smallest size 16 and largest size infinite),
+ * first-fit,and LIFO insertion policy. Score:83
+ * 2) Haven try: address-ordered policy
+ * 
  */
 #include <stdio.h>
 #include <stdlib.h>
 #include <assert.h>
 #include <unistd.h>
 #include <string.h>
+
 
 #include "mm.h"
 #include "memlib.h"
@@ -29,6 +33,8 @@ team_t team = {
 
 int mm_check(int lineno);
 
+size_t get_index(size_t size);
+
 static void *extend_heap(size_t size);
 
 static void *coalesce(void *bp);
@@ -36,6 +42,12 @@ static void *coalesce(void *bp);
 static void place(char* bp,size_t size);
 
 static void *find_fit(size_t size);
+
+static void insert_block(void *bp);
+
+static void delete_block(void *bp);
+
+inline size_t get_index(size_t size);
 
 /* single word (4) or double word (8) alignment */
 #define ALIGNMENT 8
@@ -97,31 +109,84 @@ static void *find_fit(size_t size);
 #define PRED(bp) (*(char**)(bp))
 #define SUCC(bp) (*(char**)(SUCCP(bp)))
 
+#define HEADP(idx) ((char **)arr+idx)
+#define HEAD(idx) (*(char **)(HEADP(idx)))
+
 /*check the heap*/
 // #define heapchecker(lineno) (mm_check(lineno))
 #define heapchecker(lineno)
 
+static char **arr;
+static char *heap_listp;
+static size_t arr_size=10;
 /* 
  * mm_init - initialize the malloc package.
  */
 int mm_init(void)
 {
-
+    char *bp;
+    if((bp=mem_sbrk((arr_size+4)*WSIZE))==NULL)
+        return -1;
+    arr=(char**)bp;
+    for(size_t i=0;i<arr_size;i++){
+        SETP(bp,NULL);
+        bp+=WSIZE;
+    }
+    PUT(bp,0);
+    PUT(bp+WSIZE,PACK(8,1));
+    PUT(bp+(WSIZE*2),PACK(8,1));
+    PUT(bp+(WSIZE*3),PACK(0,1));
+    if((heap_listp=extend_heap(CHUNKSIZE))==NULL)
+        return -1;
+    return 0;
 }
 
-static void *extend_heap()
+static void *extend_heap(size_t size)
 {
-
+    char * bp;
+    size_t asize = ALIGN(size);
+    if((long)(bp=mem_sbrk(asize))==-1)
+        return NULL;
+    PUT(HDRP(bp),PACK(asize,0));
+    PUT(FTRP(bp),PACK(asize,0));
+    PUT(HDRP(NEXT_BLKP(bp)),PACK(0,1));
+    return coalesce(bp);
 }
 
 static void place(char *bp,size_t size)
 {
-
+    size_t curr_size=GET_SIZE(HDRP(bp));
+    size_t left_size=curr_size-size;
+    if(left_size<QSIZE){
+        PUT(HDRP(bp),PACK(curr_size,1));
+        PUT(FTRP(bp),PACK(curr_size,1));
+        delete_block(bp);
+    }
+    else{
+        delete_block(bp);
+        PUT(FTRP(bp),PACK(left_size,0));
+        PUT(HDRP(bp),PACK(size,1));
+        PUT(FTRP(bp),PACK(size,1));
+        PUT(HDRP(NEXT_BLKP(bp)),PACK(left_size,0));
+        insert_block(NEXT_BLKP(bp));
+    }
 }
 
 static void *find_fit(size_t size)
 {
-
+    size_t idx = get_index(size);
+    size_t curr_size;
+    char *bp;
+    while(idx<arr_size){
+        bp=HEAD(idx);
+        while(bp){
+            curr_size=GET_SIZE(HDRP(bp));
+            if(curr_size>=size)return bp;
+            bp=SUCC(bp);
+        }
+        idx++;
+    }
+    return NULL;
 }
 
 /* 
@@ -130,20 +195,72 @@ static void *find_fit(size_t size)
  */
 void *mm_malloc(size_t size)
 {
+    size_t asize;
+    size_t extendsize;
+    char *bp;
+    
+    if(size==0)return NULL;
+    
+    if(size<=DSIZE)asize=QSIZE;
+    else asize=8+ALIGN(size);
+    
+    if((bp=find_fit(asize))!=NULL){
+        place(bp,asize);
+        return bp;
+    }
 
+    extendsize=MAX(asize,CHUNKSIZE);
+    if((bp=extend_heap(extendsize))==NULL)
+        return NULL;
+    place(bp,asize);
+    return bp;
 }
 
 static void *coalesce(void *bp)
 {
-
+    size_t prev_alloc=GET_ALLOC(FTRP(PREV_BLKP(bp)));
+    size_t next_alloc=GET_ALLOC(HDRP(NEXT_BLKP(bp)));
+    size_t size=GET_SIZE(HDRP(bp));
+    if(prev_alloc && next_alloc){
+        insert_block(bp);
+    }
+    else if(prev_alloc && !next_alloc){
+        size+=GET_SIZE(HDRP(NEXT_BLKP(bp)));
+        delete_block(NEXT_BLKP(bp));
+        PUT(HDRP(bp),PACK(size,0));
+        PUT(FTRP(bp),PACK(size,0));
+        insert_block(bp);
+    }
+    else if(!prev_alloc && next_alloc){
+        size+=GET_SIZE(HDRP(PREV_BLKP(bp)));
+        delete_block(PREV_BLKP(bp));
+        PUT(FTRP(bp),PACK(size,0));
+        PUT(HDRP(PREV_BLKP(bp)),PACK(size,0));
+        bp=PREV_BLKP(bp);
+        insert_block(bp);
+    }
+    else{
+        size+=(GET_SIZE(HDRP(NEXT_BLKP(bp)))+GET_SIZE(HDRP(PREV_BLKP(bp))));
+        delete_block(PREV_BLKP(bp));
+        delete_block(NEXT_BLKP(bp));
+        PUT(HDRP(PREV_BLKP(bp)),PACK(size,0));
+        PUT(FTRP(NEXT_BLKP(bp)),PACK(size,0));
+        bp=PREV_BLKP(bp);
+        insert_block(bp);
+    }
+    return bp;
 }
 
 /*
  * mm_free - Freeing a block does nothing.
  */
 void mm_free(void *ptr)
-{
-
+{  
+    size_t size=GET_SIZE(HDRP(ptr));
+    PUT(HDRP(ptr),PACK(size,0));
+    PUT(FTRP(ptr),PACK(size,0));
+    coalesce(ptr);
+    heapchecker(__LINE__);
 }
 
 /*
@@ -151,5 +268,81 @@ void mm_free(void *ptr)
  */
 void *mm_realloc(void *ptr, size_t size)
 {
+    if(!size){
+        mm_free(ptr);
+        return NULL;
+    }
+    if(!ptr)return mm_malloc(size);
+    size_t asize=8+ALIGN(size);
+    size_t free_size=GET_SIZE(HDRP(ptr));
+    if(free_size>=asize)return ptr;
+    free_size+=(!GET_ALLOC(HDRP(NEXT_BLKP(ptr))))?GET_SIZE(HDRP(NEXT_BLKP(ptr))):0;
+    if(free_size>=asize){
+        size_t left_size=free_size-asize;
+        if(left_size<QSIZE){
+            delete_block(NEXT_BLKP(ptr));
+            PUT(HDRP(ptr),PACK(free_size,1));
+            PUT(FTRP(ptr),PACK(free_size,1));
+        }
+        else{
+            delete_block(NEXT_BLKP(ptr));
+            PUT(HDRP(ptr),PACK(asize,1));
+            PUT(FTRP(ptr),PACK(asize,1));
+            PUT(HDRP(NEXT_BLKP(ptr)),PACK(left_size,0));
+            PUT(FTRP(NEXT_BLKP(ptr)),PACK(left_size,0));
+            insert_block(NEXT_BLKP(ptr));
+        }
+        return ptr;
+    }
+    void *bp=mm_malloc(size);
+    memcpy(bp,ptr,MIN(size,GET_SIZE(HDRP(ptr))));
+    mm_free(ptr);
+    return bp;
+}
 
+size_t get_index(size_t size){
+    if(size<=16)
+        return 0;
+    else if(size<=32)
+        return 1;
+    else if(size<=64)
+        return 2;
+    else if(size<=128)
+        return 3;
+    else if(size<=256)
+        return 4;
+    else if(size<=512)
+        return 5;
+    else if(size<=1024)
+        return 6;
+    else if(size<=2048)
+        return 7;
+    else if(size<=4096)
+        return 8;
+    else
+        return 9;
+}
+
+static void insert_block(void *bp){
+    size_t size=GET_SIZE(HDRP(bp));
+    size_t idx=get_index(size);
+    char *head=HEAD(idx);
+    SETP(PREDP(bp),NULL);
+    SETP(SUCCP(bp),head);
+    if(head)SETP(PREDP(head),bp);
+    SETP(HEADP(idx),bp);
+}
+
+static void delete_block(void *bp){
+    size_t size=GET_SIZE(HDRP(bp));
+    size_t idx=get_index(size);
+    char *head=HEAD(idx);
+    if(head==bp) 
+        SETP(HEADP(idx),SUCC(bp));
+    else
+        SETP(SUCCP(PRED(bp)),SUCC(bp));
+    if(SUCC(bp))
+        SETP(PREDP(SUCC(bp)),PRED(bp));
+    SETP(PREDP(bp),NULL);
+    SETP(SUCCP(bp),NULL);
 }
