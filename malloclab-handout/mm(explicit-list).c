@@ -389,7 +389,7 @@ void *mm_realloc(void *ptr, size_t size)
             char *pred=PRED(NEXT_BLKP(ptr));
             char *succ=SUCC(NEXT_BLKP(ptr));
             PUT(HDRP(ptr),PACK(asize,1));
-            PUT(HDRP(ptr),PACK(asize,1));
+            PUT(FTRP(ptr),PACK(asize,1));
             PUT(HDRP(NEXT_BLKP(ptr)),PACK(left_size,0));
             PUT(FTRP(NEXT_BLKP(ptr)),PACK(left_size,0));
             SETP(PREDP(NEXT_BLKP(ptr)),pred);
