@@ -179,7 +179,6 @@ static void place(char* bp,size_t size){
     heapchecker(__LINE__);
 }
 static void *find_fit(size_t size){
-    // char* prev=curr_pos;
     char* bp=head;
     size_t curr_size;
     while(bp){
@@ -188,6 +187,20 @@ static void *find_fit(size_t size){
         bp=SUCC(bp);
     }
     return NULL;
+    // char *prev=curr_pos;
+    // size_t curr_size;
+    // while(curr_pos){
+    //     curr_size=GET_SIZE(HDRP(curr_pos));
+    //     if(curr_size>=size)return curr_pos;
+    //     curr_pos=SUCC(curr_pos);
+    // }
+    // curr_pos=head;
+    // while(curr_pos!=prev){
+    //     curr_size=GET_SIZE(HDRP(curr_pos));
+    //     if(curr_size>=size)return curr_pos;
+    //     curr_pos=SUCC(curr_pos);
+    // }
+    // return NULL;
 }
 /* 
  * mm_malloc - Allocate a block by incrementing the brk pointer.
@@ -370,6 +383,7 @@ void *mm_realloc(void *ptr, size_t size)
     if(free_size>=asize){
         size_t left_size=free_size-asize;
         if(left_size<QSIZE){
+            // if(curr_pos==NEXT_BLKP(ptr))curr_pos=SUCC(NEXT_BLKP(ptr));
             if(head==NEXT_BLKP(ptr))head=SUCC(head);
             if(PRED(NEXT_BLKP(ptr)))
                 SETP(SUCCP(PRED(NEXT_BLKP(ptr))),SUCC(NEXT_BLKP(ptr)));
@@ -380,6 +394,7 @@ void *mm_realloc(void *ptr, size_t size)
         }
         else{
             if(head==NEXT_BLKP(ptr))head=ptr+asize;
+            // if(curr_pos==NEXT_BLKP(ptr))curr_pos=ptr+asize;
             char *pred=PRED(NEXT_BLKP(ptr));
             char *succ=SUCC(NEXT_BLKP(ptr));
             PUT(HDRP(ptr),PACK(asize,1));
