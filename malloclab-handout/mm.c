@@ -1,8 +1,8 @@
 /*
  * 1) segregated list with total 10 list(smallest size 16 and largest size infinite),
  * first-fit,and LIFO insertion policy. Score:83
- * 2) Haven try: address-ordered policy
- * 
+ * 2) address-order insertion policy and other small improve on the insertion. Score: 86
+ * 3)
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -220,32 +220,56 @@ static void *coalesce(void *bp)
     size_t prev_alloc=GET_ALLOC(FTRP(PREV_BLKP(bp)));
     size_t next_alloc=GET_ALLOC(HDRP(NEXT_BLKP(bp)));
     size_t size=GET_SIZE(HDRP(bp));
+    size_t req_insrt=1;
     if(prev_alloc && next_alloc){
         PUT(HDRP(bp),PACK(size,0));
         PUT(FTRP(bp),PACK(size,0));
     }
     else if(prev_alloc && !next_alloc){
+        size_t orig_idx=get_index(GET_SIZE(HDRP(NEXT_BLKP(bp))));
         size+=GET_SIZE(HDRP(NEXT_BLKP(bp)));
-        delete_block(NEXT_BLKP(bp));
+        size_t new_idx=get_index(size);
+        if(new_idx==orig_idx){
+            req_insrt=0;
+            SETP(PREDP(bp),PRED(NEXT_BLKP(bp)));
+            SETP(SUCCP(bp),SUCC(NEXT_BLKP(bp)));
+            if(HEAD(new_idx)==NEXT_BLKP(bp))
+                SETP(HEADP(new_idx),bp)
+            else
+                SETP(SUCCP(PRED(NEXT_BLKP(bp))),bp);
+            if(SUCC(NEXT_BLKP(bp)))
+                SETP(PREDP(SUCC(NEXT_BLKP(bp))),bp);
+        }else 
+            delete_block(NEXT_BLKP(bp));
         PUT(HDRP(bp),PACK(size,0));
         PUT(FTRP(bp),PACK(size,0));
     }
     else if(!prev_alloc && next_alloc){
+        size_t orig_idx=get_index(GET_SIZE(HDRP(PREV_BLKP(bp))));
         size+=GET_SIZE(HDRP(PREV_BLKP(bp)));
-        delete_block(PREV_BLKP(bp));
+        size_t new_idx=get_index(size);
+        if(orig_idx==new_idx)
+            req_insrt=0;
+        else
+            delete_block(PREV_BLKP(bp));
         PUT(FTRP(bp),PACK(size,0));
         PUT(HDRP(PREV_BLKP(bp)),PACK(size,0));
         bp=PREV_BLKP(bp);
     }
     else{
+        size_t orig_idx=get_index(GET_SIZE(HDRP(PREV_BLKP(bp))));
         size+=(GET_SIZE(HDRP(NEXT_BLKP(bp)))+GET_SIZE(HDRP(PREV_BLKP(bp))));
-        delete_block(PREV_BLKP(bp));
+        size_t new_idx=get_index(size);
         delete_block(NEXT_BLKP(bp));
+        if(new_idx==orig_idx)
+            req_insrt=0;
+        else
+            delete_block(PREV_BLKP(bp));
         PUT(HDRP(PREV_BLKP(bp)),PACK(size,0));
         PUT(FTRP(NEXT_BLKP(bp)),PACK(size,0));
         bp=PREV_BLKP(bp);
     }
-    insert_block(bp);
+    if(req_insrt)insert_block(bp);
     return bp;
 }
 
@@ -321,10 +345,24 @@ static void insert_block(void *bp){
     size_t size=GET_SIZE(HDRP(bp));
     size_t idx=get_index(size);
     char *head=HEAD(idx);
-    SETP(PREDP(bp),NULL);
-    SETP(SUCCP(bp),head);
-    if(head)SETP(PREDP(head),bp);
-    SETP(HEADP(idx),bp);
+    if((!head)|(head>bp)){
+        SETP(SUCCP(bp),head);
+        SETP(PREDP(bp),NULL);
+        if(head)SETP(PREDP(head),bp);
+        SETP(HEADP(idx),bp);
+        return;
+    }
+    while(head){
+        if(head<bp){
+            if((!SUCC(head))|(SUCC(head)>bp)){
+                SETP(PREDP(bp),head);
+                SETP(SUCCP(bp),SUCC(head));
+                if(SUCC(head))SETP(PREDP(SUCC(head)),bp);
+                SETP(SUCCP(head),bp);
+            }
+        }
+        head=SUCC(head);
+    }
 }
 
 static void delete_block(void *bp){
