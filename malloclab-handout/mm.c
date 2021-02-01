@@ -4,6 +4,9 @@
  * 2) address-order insertion policy and other small improve on the insertion. Score: 86
  * 3) change chunk size from 2^12 to 2^6 gives score 88.(huge improvement on trace4)
  * 4) In realloc, if the next block is free and large enough, do not do segmentation on the block. Score: 92
+ * 5) In realloc, if the next block is the epilogue then we will extend the heap to avoid memory copy. Score:93
+ * (huge improvement in trace 9 and 10, especially 10)
+ * 6)
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -63,8 +66,6 @@ inline size_t get_index(size_t size);
 
 #define DSIZE 8 /* Double word size (bytes) */
 
-// #define TSIZE 12 /* Triple word size (bytes) */
-
 #define QSIZE 16 /* Quadruple word size (bytes) */
 
 // #define PREV_ALLOC 2 /* the bit representing that the previous block is allocated*/
@@ -85,10 +86,7 @@ inline size_t get_index(size_t size);
 /* Read the size and allocated fields from address p */
 #define GET_SIZE(p) (GET(p) & ~0x7)
 #define GET_ALLOC(p) (GET(p) & 0x1)
-// #define GET_PREV_ALLOC(p) (GET(p)& 0x2)
 
-// #define PUT_PREV_ALLOC(p) ((*(unsigned int *)(p))|=0x2)
-// #define REMOVE_PREV_ALLOC(p)((*(unsigned int *)(p))&=(~0x2))
 /* Given block ptr bp, compute address of its header and footer */
 #define HDRP(bp) ((char*)(bp)-WSIZE)
 #define FTRP(bp) ((char*)(bp)+GET_SIZE(HDRP(bp))-DSIZE)
@@ -297,31 +295,18 @@ void *mm_realloc(void *ptr, size_t size)
     size_t asize=8+ALIGN(size);
     size_t free_size=GET_SIZE(HDRP(ptr));
     if(free_size>=asize)return ptr;
-    free_size+=(!GET_ALLOC(HDRP(NEXT_BLKP(ptr))))?GET_SIZE(HDRP(NEXT_BLKP(ptr))):0;
-    if(free_size>=asize){
-        size_t left_size=free_size-asize;
+    if(!GET_ALLOC(HDRP(NEXT_BLKP(ptr)))||!GET_SIZE(HDRP(NEXT_BLKP(ptr)))){
+        free_size+=GET_SIZE(HDRP(NEXT_BLKP(ptr)));
+        if(free_size<asize){
+            if((bp=extend_heap(MAX(asize-free_size,CHUNKSIZE)))==NULL)
+                return NULL;
+            free_size+=MAX(asize-free_size,CHUNKSIZE);
+        }
         delete_block(NEXT_BLKP(ptr));
-        // if(left_size<QSIZE){
         PUT(HDRP(ptr),PACK(free_size,1));
         PUT(FTRP(ptr),PACK(free_size,1));
-        // }   
-        // else{
-        //     PUT(HDRP(ptr),PACK(asize,1));
-        //     PUT(FTRP(ptr),PACK(asize,1));
-        //     PUT(HDRP(NEXT_BLKP(ptr)),PACK(left_size,0));
-        //     PUT(FTRP(NEXT_BLKP(ptr)),PACK(left_size,0));
-        //     insert_block(NEXT_BLKP(ptr));
-        // }
         return ptr;
     }
-    // else if(!GET_SIZE(HDRP(NEXT_BLKP(ptr)))){
-    //     size_t needed_size=asize-free_size;
-    //     bp=extend_heap(needed_size);
-    //     delete_block(bp);
-    //     PUT(HDRP(ptr),PACK(asize,1));
-    //     PUT(FTRP(ptr),PACK(asize,1));
-    //     return ptr;
-    // }
     bp=mm_malloc(size);
     memcpy(bp,ptr,MIN(size,GET_SIZE(HDRP(ptr))));
     mm_free(ptr);
@@ -359,7 +344,7 @@ static void insert_block(void *bp){
     size_t size=GET_SIZE(HDRP(bp));
     size_t idx=get_index(size);
     char *head=HEAD(idx);
-    if((!head)|(head>bp)){
+    if((!head)|(head>(char*)bp)){
         SETP(SUCCP(bp),head);
         SETP(PREDP(bp),NULL);
         if(head)SETP(PREDP(head),bp);
@@ -367,8 +352,8 @@ static void insert_block(void *bp){
         return;
     }
     while(head){
-        if(head<bp){
-            if((!SUCC(head))|(SUCC(head)>bp)){
+        if(head<(char*)bp){
+            if((!SUCC(head))|(SUCC(head)>(char*)bp)){
                 SETP(PREDP(bp),head);
                 SETP(SUCCP(bp),SUCC(head));
                 if(SUCC(head))SETP(PREDP(SUCC(head)),bp);
