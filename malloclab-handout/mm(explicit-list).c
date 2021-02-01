@@ -9,6 +9,7 @@
  * combine the current one with next one, and return the current ptr). have large improve on the last two test case
  * but not great improve on the score. Score: 85
  * 5) Given first-fit and the first coalesce method, use optional footer downgrade the space utilization. Score: 85
+ * 6) first-fit and address-order insertion policy give score 87.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -45,6 +46,8 @@ static void *coalesce(void *bp);
 static void place(char* bp,size_t size);
 
 static void *find_fit(size_t size);
+
+static void insert_block(void *bp);
 
 /* single word (4) or double word (8) alignment */
 #define ALIGNMENT 8
@@ -220,12 +223,9 @@ static void *coalesce(void *bp){
     size_t next_alloc=GET_ALLOC(HDRP(NEXT_BLKP(bp)));
     size_t size=GET_SIZE(HDRP(bp));
     if(prev_alloc && next_alloc){
-        SETP(PREDP(bp),NULL);
-        SETP(SUCCP(bp),head);
-        if(head)
-            SETP(PREDP(head),bp);
-        head=bp;
-        return bp;
+        PUT(HDRP(bp),PACK(size,0));
+        PUT(FTRP(bp),PACK(size,0));
+        insert_block(bp);
     }
     else if(prev_alloc && !next_alloc){
         // if(curr_pos==NEXT_BLKP(bp))curr_pos=bp;
@@ -349,12 +349,6 @@ static void *coalesce(void *bp){
  */
 void mm_free(void *ptr)
 {
-    size_t size=GET_SIZE(HDRP(ptr));
-    //clear the allocated bit
-    PUT(HDRP(ptr),PACK(size,0));
-    PUT(FTRP(ptr),PACK(size,0));
-    SETP(PREDP(ptr),NULL);
-    SETP(SUCCP(ptr),NULL);
     coalesce(ptr);
     heapchecker(__LINE__);
 }
@@ -405,6 +399,28 @@ void *mm_realloc(void *ptr, size_t size)
     memcpy(bp,ptr,MIN(size,GET_SIZE(HDRP(ptr))));
     mm_free(ptr);
     return bp;
+}
+
+static void insert_block(void *bp){
+    if((!head)|(head>bp)){
+        SETP(SUCCP(bp),head);
+        SETP(PREDP(bp),NULL);
+        if(head)SETP(PREDP(head),bp);
+        head=bp;
+        return;
+    }
+    char *ptr=head;
+    while(ptr){
+        if(ptr<bp){
+            if((!SUCC(ptr))|(SUCC(ptr)>bp)){
+                SETP(PREDP(bp),ptr);
+                SETP(SUCCP(bp),SUCC(ptr));
+                if(SUCC(ptr))SETP(PREDP(SUCC(ptr)),bp);
+                SETP(SUCCP(ptr),bp);
+            }
+        }
+        ptr=SUCC(ptr);
+    }
 }
 /*
 * mm_check
