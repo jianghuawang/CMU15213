@@ -8,7 +8,7 @@
  * 4) Given first-fit and the first coalsece method, improve the realloc function(if the next block is free, then
  * combine the current one with next one, and return the current ptr). have large improve on the last two test case
  * but not great improve on the score. Score: 85
- * 5) Given first-fit and the first coalesce method, use optional footer downgrade the space utilization. Score: 85
+ * 5) Given first-fit and the first coalesce method, using optional footer downgrade the space utilization. Score: 85
  * 6) first-fit and address-order insertion policy give score 87.
  */
 #include <stdio.h>
