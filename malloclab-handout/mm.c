@@ -294,7 +294,6 @@ static void *coalesce(void *bp)
 void mm_free(void *ptr)
 {  
     coalesce(ptr);
-    heapchecker(__LINE__);
 }
 
 /*
@@ -313,14 +312,19 @@ void *mm_realloc(void *ptr, size_t size)
     //if the actually size of the block is larger than the 
     //request size, then we can return directly
     if(free_size>=asize)return ptr;
-    //if the next block is free or next block is 
+    //if the next block is free and current size + next block size is larger
+    //then requried size, or the next block is epilogue(we will extend the heap)
+    //we do not need to copy memeory content and can return the origin address.
     if(!GET_ALLOC(HDRP(NEXT_BLKP(ptr)))||!GET_SIZE(HDRP(NEXT_BLKP(ptr)))){
         free_size+=GET_SIZE(HDRP(NEXT_BLKP(ptr)));
+        //if the size is still not enough and the next block is the epilogue
         if(free_size<asize&&(!GET_SIZE(HDRP(NEXT_BLKP(ptr))))){
+            //extend the heap
             if((bp=extend_heap(MAX(asize-free_size,CHUNKSIZE)))==NULL)
                 return NULL;
             free_size+=MAX(asize-free_size,CHUNKSIZE);
         }
+        //if the current size and next block size is enough
         if((GET_SIZE(HDRP(ptr))+GET_SIZE(HDRP(NEXT_BLKP(ptr))))>=asize){
             delete_block(NEXT_BLKP(ptr));
             PUT(HDRP(ptr),PACK(free_size,1));
@@ -328,6 +332,7 @@ void *mm_realloc(void *ptr, size_t size)
             return ptr;
         }
     }
+    //get another memory by calling malloc
     bp=mm_malloc(size);
     memcpy(bp,ptr,MIN(size,GET_SIZE(HDRP(ptr))));
     mm_free(ptr);
@@ -335,6 +340,7 @@ void *mm_realloc(void *ptr, size_t size)
 }
 
 size_t get_index(size_t size){
+    //log2 is not provided so I use the stupid method.
     if(size<=16)
         return 0;
     else if(size<=32)
@@ -361,10 +367,12 @@ size_t get_index(size_t size){
         return 11;
 }
 
+//insert in address-order
 static void insert_block(void *bp){
     size_t size=GET_SIZE(HDRP(bp));
     size_t idx=get_index(size);
     char *head=HEAD(idx);
+    //if the head is NULL or the bp is smallest address
     if((!head)|(head>(char*)bp)){
         SETP(SUCCP(bp),head);
         SETP(PREDP(bp),NULL);
@@ -373,7 +381,10 @@ static void insert_block(void *bp){
         return;
     }
     while(head){
+        //if the head is smaller than bp
         if(head<(char*)bp){
+            //if we reach the end of the list or the next block
+            //in the list has larger address than bp,then we can place the block.
             if((!SUCC(head))|(SUCC(head)>(char*)bp)){
                 SETP(PREDP(bp),head);
                 SETP(SUCCP(bp),SUCC(head));
