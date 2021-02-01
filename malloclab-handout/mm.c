@@ -2,7 +2,8 @@
  * 1) segregated list with total 10 list(smallest size 16 and largest size infinite),
  * first-fit,and LIFO insertion policy. Score:83
  * 2) address-order insertion policy and other small improve on the insertion. Score: 86
- * 3)
+ * 3) change chunk size from 2^12 to 2^6 gives score 88.(huge improvement on trace4)
+ * 4) In realloc, if the next block is free and large enough, do not do segmentation on the block. Score: 92
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -68,7 +69,7 @@ inline size_t get_index(size_t size);
 
 // #define PREV_ALLOC 2 /* the bit representing that the previous block is allocated*/
 
-#define CHUNKSIZE (1<<12) /*Extend heap by this amount(bytes) */
+#define CHUNKSIZE (1<<6) /*Extend heap by this amount(bytes) */
 
 #define MAX(x,y) ((x)>(y)?(x):(y))
 
@@ -118,7 +119,7 @@ inline size_t get_index(size_t size);
 
 static char **arr;
 static char *heap_listp;
-static size_t arr_size=10;
+static size_t arr_size=12;
 /* 
  * mm_init - initialize the malloc package.
  */
@@ -234,7 +235,7 @@ static void *coalesce(void *bp)
             SETP(PREDP(bp),PRED(NEXT_BLKP(bp)));
             SETP(SUCCP(bp),SUCC(NEXT_BLKP(bp)));
             if(HEAD(new_idx)==NEXT_BLKP(bp))
-                SETP(HEADP(new_idx),bp)
+                SETP(HEADP(new_idx),bp);
             else
                 SETP(SUCCP(PRED(NEXT_BLKP(bp))),bp);
             if(SUCC(NEXT_BLKP(bp)))
@@ -292,6 +293,7 @@ void *mm_realloc(void *ptr, size_t size)
         return NULL;
     }
     if(!ptr)return mm_malloc(size);
+    char *bp;
     size_t asize=8+ALIGN(size);
     size_t free_size=GET_SIZE(HDRP(ptr));
     if(free_size>=asize)return ptr;
@@ -299,20 +301,28 @@ void *mm_realloc(void *ptr, size_t size)
     if(free_size>=asize){
         size_t left_size=free_size-asize;
         delete_block(NEXT_BLKP(ptr));
-        if(left_size<QSIZE){
-            PUT(HDRP(ptr),PACK(free_size,1));
-            PUT(FTRP(ptr),PACK(free_size,1));
-        }
-        else{
-            PUT(HDRP(ptr),PACK(asize,1));
-            PUT(FTRP(ptr),PACK(asize,1));
-            PUT(HDRP(NEXT_BLKP(ptr)),PACK(left_size,0));
-            PUT(FTRP(NEXT_BLKP(ptr)),PACK(left_size,0));
-            insert_block(NEXT_BLKP(ptr));
-        }
+        // if(left_size<QSIZE){
+        PUT(HDRP(ptr),PACK(free_size,1));
+        PUT(FTRP(ptr),PACK(free_size,1));
+        // }   
+        // else{
+        //     PUT(HDRP(ptr),PACK(asize,1));
+        //     PUT(FTRP(ptr),PACK(asize,1));
+        //     PUT(HDRP(NEXT_BLKP(ptr)),PACK(left_size,0));
+        //     PUT(FTRP(NEXT_BLKP(ptr)),PACK(left_size,0));
+        //     insert_block(NEXT_BLKP(ptr));
+        // }
         return ptr;
     }
-    void *bp=mm_malloc(size);
+    // else if(!GET_SIZE(HDRP(NEXT_BLKP(ptr)))){
+    //     size_t needed_size=asize-free_size;
+    //     bp=extend_heap(needed_size);
+    //     delete_block(bp);
+    //     PUT(HDRP(ptr),PACK(asize,1));
+    //     PUT(FTRP(ptr),PACK(asize,1));
+    //     return ptr;
+    // }
+    bp=mm_malloc(size);
     memcpy(bp,ptr,MIN(size,GET_SIZE(HDRP(ptr))));
     mm_free(ptr);
     return bp;
@@ -337,8 +347,12 @@ size_t get_index(size_t size){
         return 7;
     else if(size<=4096)
         return 8;
-    else
+    else if(size<=8192)
         return 9;
+    else if(size<=16384)
+        return 10;
+    else
+        return 11;
 }
 
 static void insert_block(void *bp){
@@ -369,7 +383,7 @@ static void delete_block(void *bp){
     size_t size=GET_SIZE(HDRP(bp));
     size_t idx=get_index(size);
     char *head=HEAD(idx);
-    if(head==bp) 
+    if(head==bp)
         SETP(HEADP(idx),SUCC(bp));
     else
         SETP(SUCCP(PRED(bp)),SUCC(bp));
