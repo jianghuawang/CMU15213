@@ -124,17 +124,19 @@ static size_t arr_size=12;
 int mm_init(void)
 {
     char *bp;
+    //create space for the array and prologue header/footer and epilogue header
     if((bp=mem_sbrk((arr_size+4)*WSIZE))==NULL)
         return -1;
     arr=(char**)bp;
+    //Intialize the array
     for(size_t i=0;i<arr_size;i++){
         SETP(bp,NULL);
         bp+=WSIZE;
     }
-    PUT(bp,0);
-    PUT(bp+WSIZE,PACK(8,1));
-    PUT(bp+(WSIZE*2),PACK(8,1));
-    PUT(bp+(WSIZE*3),PACK(0,1));
+    PUT(bp,0); 
+    PUT(bp+WSIZE,PACK(8,1)); // prologue header
+    PUT(bp+(WSIZE*2),PACK(8,1)); // prologue footer
+    PUT(bp+(WSIZE*3),PACK(0,1)); // epilogue header
     if((heap_listp=extend_heap(CHUNKSIZE))==NULL)
         return -1;
     return 0;
@@ -146,9 +148,10 @@ static void *extend_heap(size_t size)
     size_t asize = ALIGN(size);
     if((long)(bp=mem_sbrk(asize))==-1)
         return NULL;
+    // set the free block header(replace the original epilogue header)
     PUT(HDRP(bp),PACK(asize,0));
-    PUT(FTRP(bp),PACK(asize,0));
-    PUT(HDRP(NEXT_BLKP(bp)),PACK(0,1));
+    PUT(FTRP(bp),PACK(asize,0)); // set the free block footer
+    PUT(HDRP(NEXT_BLKP(bp)),PACK(0,1)); // set the epilogue header
     return coalesce(bp);
 }
 
@@ -156,12 +159,15 @@ static void place(char *bp,size_t size)
 {
     size_t curr_size=GET_SIZE(HDRP(bp));
     size_t left_size=curr_size-size;
+    //delete block from the free list
     delete_block(bp);
     if(left_size<QSIZE){
+        //the left size is not enough to be a block,so gives it to the user directly
         PUT(HDRP(bp),PACK(curr_size,1));
         PUT(FTRP(bp),PACK(curr_size,1));
     }
     else{
+        //split the block into two part, and insert the later part into the free list
         PUT(FTRP(bp),PACK(left_size,0));
         PUT(HDRP(bp),PACK(size,1));
         PUT(FTRP(bp),PACK(size,1));
@@ -172,6 +178,7 @@ static void place(char *bp,size_t size)
 
 static void *find_fit(size_t size)
 {
+    // get the index of the first list that we want to search
     size_t idx = get_index(size);
     size_t curr_size;
     char *bp;
@@ -182,6 +189,8 @@ static void *find_fit(size_t size)
             if(curr_size>=size)return bp;
             bp=SUCC(bp);
         }
+        // if not find large enough block in the current free list,
+        // search the next list containing larger blocks.
         idx++;
     }
     return NULL;
@@ -197,8 +206,9 @@ void *mm_malloc(size_t size)
     size_t extendsize;
     char *bp;
     
+    //ignore spurious request
     if(size==0)return NULL;
-    
+    //the minimum size of the block is 16 (1 header,1 footer,1 pred,1 succ)
     if(size<=DSIZE)asize=QSIZE;
     else asize=8+ALIGN(size);
     
@@ -206,7 +216,7 @@ void *mm_malloc(size_t size)
         place(bp,asize);
         return bp;
     }
-
+    //if not find usable free block, then ask for larger block
     extendsize=MAX(asize,CHUNKSIZE);
     if((bp=extend_heap(extendsize))==NULL)
         return NULL;
@@ -225,9 +235,13 @@ static void *coalesce(void *bp)
         PUT(FTRP(bp),PACK(size,0));
     }
     else if(prev_alloc && !next_alloc){
+        //the index of the list that next block is currently in
         size_t orig_idx=get_index(GET_SIZE(HDRP(NEXT_BLKP(bp))));
         size+=GET_SIZE(HDRP(NEXT_BLKP(bp)));
+        //the index of the list that the newly combined block will be inserted
         size_t new_idx=get_index(size);
+        //if the index are the same, then the old one do not need to be delete from the list,
+        //we can easily combined them since it will still be in address-order.
         if(new_idx==orig_idx){
             req_insrt=0;
             SETP(PREDP(bp),PRED(NEXT_BLKP(bp)));
@@ -244,6 +258,7 @@ static void *coalesce(void *bp)
         PUT(FTRP(bp),PACK(size,0));
     }
     else if(!prev_alloc && next_alloc){
+        //same logic as before
         size_t orig_idx=get_index(GET_SIZE(HDRP(PREV_BLKP(bp))));
         size+=GET_SIZE(HDRP(PREV_BLKP(bp)));
         size_t new_idx=get_index(size);
@@ -256,6 +271,7 @@ static void *coalesce(void *bp)
         bp=PREV_BLKP(bp);
     }
     else{
+        //same as before.
         size_t orig_idx=get_index(GET_SIZE(HDRP(PREV_BLKP(bp))));
         size+=(GET_SIZE(HDRP(NEXT_BLKP(bp)))+GET_SIZE(HDRP(PREV_BLKP(bp))));
         size_t new_idx=get_index(size);
@@ -294,18 +310,23 @@ void *mm_realloc(void *ptr, size_t size)
     char *bp;
     size_t asize=8+ALIGN(size);
     size_t free_size=GET_SIZE(HDRP(ptr));
+    //if the actually size of the block is larger than the 
+    //request size, then we can return directly
     if(free_size>=asize)return ptr;
+    //if the next block is free or next block is 
     if(!GET_ALLOC(HDRP(NEXT_BLKP(ptr)))||!GET_SIZE(HDRP(NEXT_BLKP(ptr)))){
         free_size+=GET_SIZE(HDRP(NEXT_BLKP(ptr)));
-        if(free_size<asize){
+        if(free_size<asize&&(!GET_SIZE(HDRP(NEXT_BLKP(ptr))))){
             if((bp=extend_heap(MAX(asize-free_size,CHUNKSIZE)))==NULL)
                 return NULL;
             free_size+=MAX(asize-free_size,CHUNKSIZE);
         }
-        delete_block(NEXT_BLKP(ptr));
-        PUT(HDRP(ptr),PACK(free_size,1));
-        PUT(FTRP(ptr),PACK(free_size,1));
-        return ptr;
+        if((GET_SIZE(HDRP(ptr))+GET_SIZE(HDRP(NEXT_BLKP(ptr))))>=asize){
+            delete_block(NEXT_BLKP(ptr));
+            PUT(HDRP(ptr),PACK(free_size,1));
+            PUT(FTRP(ptr),PACK(free_size,1));
+            return ptr;
+        }
     }
     bp=mm_malloc(size);
     memcpy(bp,ptr,MIN(size,GET_SIZE(HDRP(ptr))));
