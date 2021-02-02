@@ -6,7 +6,10 @@
  * 4) In realloc, if the next block is free and large enough, do not do segmentation on the block. Score: 92
  * 5) In realloc, if the next block is the epilogue then we will extend the heap to avoid memory copy. Score:93
  * (huge improvement in trace 9 and 10, especially 10)
- * 6)
+ * 6) insert block into the free-list based on block size(in ascending order, and head points to the smallest block).
+ * given this order, the first-fit will always be best-fit since the first block we meet is the smallest one that
+ * is larger than the required size. However, this one do not increase the memory utilization and I get the same 93 as before.
+ * 
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -229,62 +232,38 @@ static void *coalesce(void *bp)
     size_t prev_alloc=GET_ALLOC(FTRP(PREV_BLKP(bp)));
     size_t next_alloc=GET_ALLOC(HDRP(NEXT_BLKP(bp)));
     size_t size=GET_SIZE(HDRP(bp));
-    size_t req_insrt=1;
     if(prev_alloc && next_alloc){
         PUT(HDRP(bp),PACK(size,0));
         PUT(FTRP(bp),PACK(size,0));
     }
     else if(prev_alloc && !next_alloc){
         //the index of the list that next block is currently in
-        size_t orig_idx=get_index(GET_SIZE(HDRP(NEXT_BLKP(bp))));
         size+=GET_SIZE(HDRP(NEXT_BLKP(bp)));
         //the index of the list that the newly combined block will be inserted
-        size_t new_idx=get_index(size);
         //if the index are the same, then the old one do not need to be delete from the list,
         //we can easily combined them since it will still be in address-order.
-        if(new_idx==orig_idx){
-            req_insrt=0;
-            SETP(PREDP(bp),PRED(NEXT_BLKP(bp)));
-            SETP(SUCCP(bp),SUCC(NEXT_BLKP(bp)));
-            if(HEAD(new_idx)==NEXT_BLKP(bp))
-                SETP(HEADP(new_idx),bp);
-            else
-                SETP(SUCCP(PRED(NEXT_BLKP(bp))),bp);
-            if(SUCC(NEXT_BLKP(bp)))
-                SETP(PREDP(SUCC(NEXT_BLKP(bp))),bp);
-        }else 
-            delete_block(NEXT_BLKP(bp));
+        delete_block(NEXT_BLKP(bp));
         PUT(HDRP(bp),PACK(size,0));
         PUT(FTRP(bp),PACK(size,0));
     }
     else if(!prev_alloc && next_alloc){
         //same logic as before
-        size_t orig_idx=get_index(GET_SIZE(HDRP(PREV_BLKP(bp))));
         size+=GET_SIZE(HDRP(PREV_BLKP(bp)));
-        size_t new_idx=get_index(size);
-        if(orig_idx==new_idx)
-            req_insrt=0;
-        else
-            delete_block(PREV_BLKP(bp));
+        delete_block(PREV_BLKP(bp));
         PUT(FTRP(bp),PACK(size,0));
         PUT(HDRP(PREV_BLKP(bp)),PACK(size,0));
         bp=PREV_BLKP(bp);
     }
     else{
         //same as before.
-        size_t orig_idx=get_index(GET_SIZE(HDRP(PREV_BLKP(bp))));
         size+=(GET_SIZE(HDRP(NEXT_BLKP(bp)))+GET_SIZE(HDRP(PREV_BLKP(bp))));
-        size_t new_idx=get_index(size);
         delete_block(NEXT_BLKP(bp));
-        if(new_idx==orig_idx)
-            req_insrt=0;
-        else
-            delete_block(PREV_BLKP(bp));
+        delete_block(PREV_BLKP(bp));
         PUT(HDRP(PREV_BLKP(bp)),PACK(size,0));
         PUT(FTRP(NEXT_BLKP(bp)),PACK(size,0));
         bp=PREV_BLKP(bp);
     }
-    if(req_insrt)insert_block(bp);
+    insert_block(bp);
     return bp;
 }
 
@@ -367,13 +346,13 @@ size_t get_index(size_t size){
         return 11;
 }
 
-//insert in address-order
+//insert in ascending order(block size)
 static void insert_block(void *bp){
     size_t size=GET_SIZE(HDRP(bp));
     size_t idx=get_index(size);
     char *head=HEAD(idx);
-    //if the head is NULL or the bp is smallest address
-    if((!head)|(head>(char*)bp)){
+    //if the head is NULL or the new block has smallest size
+    if((!head)||(size<=GET_SIZE(HDRP(head)))){
         SETP(SUCCP(bp),head);
         SETP(PREDP(bp),NULL);
         if(head)SETP(PREDP(head),bp);
@@ -381,15 +360,17 @@ static void insert_block(void *bp){
         return;
     }
     while(head){
-        //if the head is smaller than bp
-        if(head<(char*)bp){
+        //if the head has smaller size than the new block
+        if(GET_SIZE(HDRP(head))<=size){
             //if we reach the end of the list or the next block
-            //in the list has larger address than bp,then we can place the block.
-            if((!SUCC(head))|(SUCC(head)>(char*)bp)){
+            //in the list has larger size than the new block,
+            //then we can place the block.
+            if((!SUCC(head))||(GET_SIZE(HDRP(SUCC(head)))>size)){
                 SETP(PREDP(bp),head);
                 SETP(SUCCP(bp),SUCC(head));
                 if(SUCC(head))SETP(PREDP(SUCC(head)),bp);
                 SETP(SUCCP(head),bp);
+                return;
             }
         }
         head=SUCC(head);
