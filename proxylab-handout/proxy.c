@@ -129,6 +129,8 @@ void doit(int fd){
         return;
     }
 
+    strcat(request_line," HTTP/1.0\r\n");
+
     //initialize the header
     init_headers(header);
 
@@ -153,8 +155,6 @@ void doit(int fd){
     }
 
     rio_readinitb(&rio_server,serverfd);
-
-    strcat(request_line," HTTP/1.0\r\n");
     
     send_request(serverfd,request_line,header);
 
