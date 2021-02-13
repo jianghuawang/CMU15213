@@ -63,7 +63,7 @@ int sbuf_remove(sbuf_t *sp){
     return item;
 }
 /* You won't lose style points for including this long line in your code */
-static const char *user_agent_hdr = "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:10.0.3) Gecko/20120305 Firefox/10.0.3\r\n";
+static const char *user_agent_hdr = "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10.16; rv:85.0) Gecko/20100101 Firefox/85.0\r\n";
 static sbuf_t sbuf;
 
 int main(int argc,char* argv[])
@@ -249,21 +249,21 @@ void clienterror(int fd, char *cause, char *errnum,
 
     /* Print the HTTP response headers */
     sprintf(buf, "HTTP/1.0 %s %s\r\n", errnum, shortmsg);
-    if(rio_writen(fd, buf, strlen(buf)))return;
+    if(rio_writen(fd, buf, strlen(buf))<0)return;
     sprintf(buf, "Content-type: text/html\r\n\r\n");
-    if(rio_writen(fd, buf, strlen(buf)))return;
+    if(rio_writen(fd, buf, strlen(buf))<0)return;
 
     /* Print the HTTP response body */
     sprintf(buf, "<html><title>Proxy Error</title>");
-    if(rio_writen(fd, buf, strlen(buf)))return;
+    if(rio_writen(fd, buf, strlen(buf))<0)return;
     sprintf(buf, "<body bgcolor=""ffffff"">\r\n");
-    if(rio_writen(fd, buf, strlen(buf)))return;
+    if(rio_writen(fd, buf, strlen(buf))<0)return;
     sprintf(buf, "%s: %s\r\n", errnum, shortmsg);
-    if(rio_writen(fd, buf, strlen(buf)))return;
+    if(rio_writen(fd, buf, strlen(buf))<0)return;
     sprintf(buf, "<p>%s: %s\r\n", longmsg, cause);
-    if(rio_writen(fd, buf, strlen(buf)))return;
+    if(rio_writen(fd, buf, strlen(buf))<0)return;
     sprintf(buf, "<hr><em>The Proxylab Web Proxy</em>\r\n");
-    if(rio_writen(fd, buf, strlen(buf)))return;
+    if(rio_writen(fd, buf, strlen(buf))<0)return;
 }
 
 void sigpipe_handler(int sig){
