@@ -31,6 +31,7 @@ void sbuf_deinit(sbuf_t *sp);
 void sbuf_insert(sbuf_t *sp,int item);
 int sbuf_remove(sbuf_t *sp);
 void *thread(void *vargp);
+void sigpipe_handler(int sig);
 
 
 void sbuf_init(sbuf_t *sp,int n){
@@ -76,6 +77,8 @@ int main(int argc,char* argv[])
         fprintf(stderr,"usage: %s <port>\n",argv[0]);
         exit(1);
     }
+    Signal(SIGPIPE,sigpipe_handler);
+
     listenfd = Open_listenfd(argv[1]);
     
     sbuf_init(&sbuf,SBUFSIZE);
@@ -235,7 +238,7 @@ void send_request(int serverfd,char *request_line,char *header){
 void redirect_response(int clientfd,rio_t *rio_server,char *buf){
     size_t size;
     while((size=rio_readnb(rio_server,buf,MAXLINE))!=0){
-        rio_writen(clientfd,buf,size);
+        if(rio_writen(clientfd,buf,size)<0)return;
     }
 }
 
@@ -246,19 +249,23 @@ void clienterror(int fd, char *cause, char *errnum,
 
     /* Print the HTTP response headers */
     sprintf(buf, "HTTP/1.0 %s %s\r\n", errnum, shortmsg);
-    Rio_writen(fd, buf, strlen(buf));
+    if(rio_writen(fd, buf, strlen(buf)))return;
     sprintf(buf, "Content-type: text/html\r\n\r\n");
-    Rio_writen(fd, buf, strlen(buf));
+    if(rio_writen(fd, buf, strlen(buf)))return;
 
     /* Print the HTTP response body */
     sprintf(buf, "<html><title>Proxy Error</title>");
-    Rio_writen(fd, buf, strlen(buf));
+    if(rio_writen(fd, buf, strlen(buf)))return;
     sprintf(buf, "<body bgcolor=""ffffff"">\r\n");
-    Rio_writen(fd, buf, strlen(buf));
+    if(rio_writen(fd, buf, strlen(buf)))return;
     sprintf(buf, "%s: %s\r\n", errnum, shortmsg);
-    Rio_writen(fd, buf, strlen(buf));
+    if(rio_writen(fd, buf, strlen(buf)))return;
     sprintf(buf, "<p>%s: %s\r\n", longmsg, cause);
-    Rio_writen(fd, buf, strlen(buf));
+    if(rio_writen(fd, buf, strlen(buf)))return;
     sprintf(buf, "<hr><em>The Proxylab Web Proxy</em>\r\n");
-    Rio_writen(fd, buf, strlen(buf));
+    if(rio_writen(fd, buf, strlen(buf)))return;
+}
+
+void sigpipe_handler(int sig){
+
 }
