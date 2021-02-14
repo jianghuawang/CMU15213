@@ -1,6 +1,7 @@
 #include "cache.h"
 #include "csapp.h"
 
+
 uint32_t inline MurmurOAAT32(const char * key)
 {
     uint32_t h(3323198485ul);
@@ -12,21 +13,30 @@ uint32_t inline MurmurOAAT32(const char * key)
     return h;
 }
 
-HashMap *construct_map(){
-    HashMap* hm=malloc(sizeof(HashMap));
-    int i=0;
-    for(;i<MAPSIZE;i++){
-        hm->map[i].head=NULL;
-        hm->map[i].tail=NULL;
+void LRU_init(LRU *lru){
+    int i;
+    for(i=0;i<MAPSIZE;i++)
+        lru->map[i]=NULL;
+    lru->lst.head=NULL;
+    lru->lst.tail=NULL;
+    lru->count=0;
+    sem_init(&lru->mutex,0,1);
+    sem_init(&lru->w,0,1);
+}
+
+void insert(LRU *lru,char *URL,char *content,int size){
+    Node * curr=get_node(lru,URL);
+    if(curr){
+        strcat(curr->content,content);
     }
-    hm->count=0;
-    sem_init(&hm->mutex,0,1);
-    sem_init(&hm->w,0,1);
-    return hm;
+    else{
+        P(&lru->w);
+        curr=malloc(sizeof(Node));
+        curr->next=lru->lst.head;
+        curr->prev=NULL;
+        if(lru->lst.head)lru->lst.head->prev=curr;
+        if(!lru->lst.tail)lru->lst.tail=curr;
+        lru->head=curr;
+        map_insert(lru,url,curr);
+    }
 }
-void destruct_map(HashMap* hm){
-    free(hm);
-}
-
-void insert_item()
-
