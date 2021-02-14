@@ -6,9 +6,15 @@
 #define MAX_OBJECT_SIZE 102400
 #define NTHREAD 8
 #define SBUFSIZE 16
+#define CACHE_SIZE 10
 
 typedef struct {
-    int *buf;
+    int curr_time;
+    int clientfd;
+} Request;
+
+typedef struct {
+    Request *buf;
     int n;
     int front;
     int rear;
@@ -17,54 +23,60 @@ typedef struct {
     sem_t items;
 } sbuf_t;
 
-void doit(int fd);
+typedef struct {
+    char URL[MAXLINE];
+    char content[MAX_OBJECT_SIZE];
+    int valid;
+    int time;
+    int hash;
+    int size;
+} CacheLine;
+
+typedef struct {
+    CacheLine* cache;
+    volatile int readcnt;
+    sem_t mutex;
+    sem_t w;
+} Cache;
+
+void doit(int fd,int time);
 void init_headers(char *header);
 int read_requesthdrs(rio_t *rp,char *header);
 int parse_url(char *url,char *hostname,char *reqeust_line,char *port);
 void send_request(int serverfd,char *request_line,char *header);
-void redirect_response(int clientfd,rio_t *rio_server,char *buf);
+void redirect_response(int clientfd,rio_t *rio_server,char *URL,int time);
 void clienterror(int fd, char *cause, char *errnum, 
 		 char *shortmsg, char *longmsg);
 
 void sbuf_init(sbuf_t *sp,int n);
 void sbuf_deinit(sbuf_t *sp);
-void sbuf_insert(sbuf_t *sp,int item);
-int sbuf_remove(sbuf_t *sp);
+void sbuf_insert(sbuf_t *sp,int item,int time);
+int sbuf_remove(sbuf_t *sp,int* time);
 void *thread(void *vargp);
+
 void sigpipe_handler(int sig);
 
+void cache_init(Cache *cache_ptr);
+int cache_find(Cache* cache_ptr,char *URL);
+void send_from_cache(Cache *cache_ptr,int idx,int clientfd,int time);
+void cache_insert(Cache *cache_ptr,char *URL,char *content,int size,int time);
 
-void sbuf_init(sbuf_t *sp,int n){
-    sp->buf = Calloc(n,sizeof(int));
-    sp->n=n;
-    sp->front=sp->rear=0;
-    sem_init(&sp->mutex,0,1);
-    sem_init(&sp->slots,0,n);
-    sem_init(&sp->items,0,0);
+
+int MurmurOAAT32(char * key)
+{
+    int h=3323198485ul;
+    for (;*key;++key) {
+        h ^= *key;
+        h *= 0x5bd1e995;
+        h ^= h >> 15;
+    }
+    return h;
 }
 
-void sbuf_deinit(sbuf_t *sp){
-    free(sp->buf);
-}
-void sbuf_insert(sbuf_t *sp,int item){
-    P(&sp->slots);
-    P(&sp->mutex);
-    sp->buf[(++sp->rear)%(sp->n)]=item;
-    V(&sp->mutex);
-    V(&sp->items);
-}
-int sbuf_remove(sbuf_t *sp){
-    int item;
-    P(&sp->items);
-    P(&sp->mutex);
-    item=sp->buf[(++sp->front)%(sp->n)];
-    V(&sp->mutex);
-    V(&sp->slots);
-    return item;
-}
 /* You won't lose style points for including this long line in your code */
 static const char *user_agent_hdr = "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10.16; rv:85.0) Gecko/20100101 Firefox/85.0\r\n";
 static sbuf_t sbuf;
+static Cache cache;
 
 int main(int argc,char* argv[])
 {
@@ -72,6 +84,7 @@ int main(int argc,char* argv[])
     socklen_t clientlen;
     struct sockaddr_storage clientaddr;
     pthread_t tid;
+    int time;
     /* Check the command line args*/
     if(argc != 2){
         fprintf(stderr,"usage: %s <port>\n",argv[0]);
@@ -80,17 +93,20 @@ int main(int argc,char* argv[])
     Signal(SIGPIPE,sigpipe_handler);
 
     listenfd = Open_listenfd(argv[1]);
-    
+
+    cache_init(&cache);
     sbuf_init(&sbuf,SBUFSIZE);
+    time = 0;
 
     for(int i=0;i<NTHREAD;i++)
         pthread_create(&tid,NULL,thread,NULL);
 
     while(1){
+        time++;
         clientlen = sizeof(clientaddr);
         connfd=Accept(listenfd,(SA *)&clientaddr,&clientlen);
         printf("connect to client on file descriptor %d\n",connfd);
-        sbuf_insert(&sbuf,connfd);
+        sbuf_insert(&sbuf,connfd,time);
     }
     sbuf_deinit(&sbuf);
     return 1;
@@ -99,16 +115,17 @@ int main(int argc,char* argv[])
 void *thread(void *vargp){
     pthread_detach(pthread_self());
     while(1){
-        int connfd = sbuf_remove(&sbuf);
-        doit(connfd);
+        int time;
+        int connfd = sbuf_remove(&sbuf,&time);
+        doit(connfd,time);
         close(connfd);
     }
 }
 
-void doit(int fd){
+void doit(int fd,int time){
     char buf[MAXLINE],method[MAXLINE],url[MAXLINE],version[MAXLINE];
-    char header[MAXLINE]="",hostname[MAXLINE];
-    char port[MAXLINE]="80",request_line[MAXLINE]="GET ";
+    char header[MAXLINE]="",hostname[MAXLINE],uri[MAXLINE];
+    char port[MAXLINE]="80",request_line[MAXLINE];
     int has_host,serverfd;
     rio_t rio_client,rio_server;
 
@@ -127,19 +144,17 @@ void doit(int fd){
     }
 
     /* Parse the URL into hostname and uri and even the port */
-    if(!parse_url(url,hostname,request_line,port)){
+    if(!parse_url(url,hostname,uri,port)){
         clienterror(fd,method,"400","Bad request","Hostname is invalid");
         return;
     }
-
-    strcat(request_line," HTTP/1.0\r\n");
-
+    sprintf(request_line,"GET %s HTTP/1.0\r\n",uri);
     //initialize the header
     init_headers(header);
-
+    
     //fill the header
     has_host=read_requesthdrs(&rio_client,header);
-
+    //handle the Host header
     if(has_host==-1){
         clienterror(fd,method,"400","Bad request","Request header is invalid");
         return;
@@ -148,7 +163,16 @@ void doit(int fd){
         sprintf(header,"%sHost: %s\r\n\r\n",header,hostname);
     else
         strcat(header,"\r\n");
+
+    strcpy(url,hostname);
+    strcat(url,uri);
+    int idx=cache_find(&cache,url);
     
+    if(idx>=0){
+        send_from_cache(&cache,idx,fd,time);
+        return;
+    }   
+
     serverfd=open_clientfd(hostname,port);
 
     //cannot build connection 
@@ -161,7 +185,7 @@ void doit(int fd){
     
     send_request(serverfd,request_line,header);
 
-    redirect_response(fd,&rio_server,buf);
+    redirect_response(fd,&rio_server,url,time);
 
     close(serverfd);
 }
@@ -195,7 +219,7 @@ int read_requesthdrs(rio_t *rp,char *header){
     return has_host;
 }
 
-int parse_url(char *url,char *hostname,char *reqeust_line,char *port){
+int parse_url(char *url,char *hostname,char *uri,char *port){
     char *colon_pos, *slash_pos, *host_begin;
     host_begin=strstr(url,"http://");
     if(!host_begin)return 0;
@@ -204,10 +228,11 @@ int parse_url(char *url,char *hostname,char *reqeust_line,char *port){
     if(colon_pos){
         *colon_pos='\0';
         strcpy(hostname,host_begin);
+        *colon_pos=':';
         slash_pos=strchr(colon_pos+1,'/');
         if(!slash_pos){
             strcpy(port,colon_pos+1);
-            strcat(reqeust_line,"/");
+            strcpy(uri,"/");
             return 1;
         }
         *slash_pos='\0';
@@ -218,14 +243,14 @@ int parse_url(char *url,char *hostname,char *reqeust_line,char *port){
         slash_pos=strchr(host_begin,'/');
         if(!slash_pos){
             strcpy(hostname,host_begin);
-            strcat(reqeust_line,"/");
+            strcpy(uri,"/");
             return 1;
         }
         *slash_pos='\0';
         strcpy(hostname,host_begin);
         *slash_pos='/';
     }
-    strcat(reqeust_line,slash_pos);
+    strcpy(uri,slash_pos);
     return 1;
 }
 void send_request(int serverfd,char *request_line,char *header){
@@ -235,10 +260,17 @@ void send_request(int serverfd,char *request_line,char *header){
     printf("%s",header);
 }
 
-void redirect_response(int clientfd,rio_t *rio_server,char *buf){
-    size_t size;
-    while((size=rio_readnb(rio_server,buf,MAXLINE))!=0){
-        if(rio_writen(clientfd,buf,size)<0)return;
+void redirect_response(int clientfd,rio_t *rio_server,char *URL,int time){
+    size_t size,total_size=0;
+    char buf[MAX_OBJECT_SIZE];
+    char *pos=buf;
+    while((size=rio_readnb(rio_server,pos,MAXLINE))!=0){
+        if(rio_writen(clientfd,pos,size)<0)return;
+        total_size+=size;
+        pos+=size;
+    }
+    if(total_size<=MAX_OBJECT_SIZE){
+        cache_insert(&cache,URL,buf,total_size,time);
     }
 }
 
@@ -268,4 +300,107 @@ void clienterror(int fd, char *cause, char *errnum,
 
 void sigpipe_handler(int sig){
 
+}
+
+void sbuf_init(sbuf_t *sp,int n){
+    sp->buf = Calloc(n,sizeof(Request));
+    sp->n=n;
+    sp->front=sp->rear=0;
+    sem_init(&sp->mutex,0,1);
+    sem_init(&sp->slots,0,n);
+    sem_init(&sp->items,0,0);
+}
+
+void sbuf_deinit(sbuf_t *sp){
+    free(sp->buf);
+}
+void sbuf_insert(sbuf_t *sp,int item,int time){
+    P(&sp->slots);
+    P(&sp->mutex);
+    sp->rear++;
+    sp->buf[(sp->rear)%(sp->n)].clientfd=item;
+    sp->buf[(sp->rear)%(sp->n)].curr_time=time;
+    V(&sp->mutex);
+    V(&sp->items);
+}
+int sbuf_remove(sbuf_t *sp,int *time){
+    int item;
+    P(&sp->items);
+    P(&sp->mutex);
+    sp->front++;
+    item=sp->buf[(sp->front)%(sp->n)].clientfd;
+    *time=sp->buf[(sp->front)%(sp->n)].curr_time;
+    V(&sp->mutex);
+    V(&sp->slots);
+    return item;
+}
+
+void cache_init(Cache* cache_ptr){
+    cache_ptr->cache=Calloc(CACHE_SIZE,sizeof(CacheLine));
+    sem_init(&cache_ptr->mutex,0,1);
+    sem_init(&cache_ptr->w,0,1);
+    cache_ptr->readcnt=0;
+}
+
+int cache_find(Cache* cache_ptr,char *URL){
+    int hash=MurmurOAAT32(URL);
+    P(&cache_ptr->mutex);
+    cache_ptr->readcnt++;
+    if(cache_ptr->readcnt == 1)
+        P(&cache_ptr->w);
+    V(&cache_ptr->mutex);
+
+    CacheLine *curr=cache_ptr->cache;
+    int i=0;
+    for(;i<CACHE_SIZE;i++){
+        if(curr->valid && curr->hash==hash && !strcmp(URL,curr->URL))
+            break;
+        curr++;
+    }
+
+    P(&cache_ptr->mutex);
+    cache_ptr->readcnt--;
+    if(cache_ptr->readcnt==0)
+        V(&cache_ptr->w);
+    V(&cache_ptr->mutex);
+
+    return (i>=CACHE_SIZE)?-1:i;
+}
+void send_from_cache(Cache *cache_ptr,int idx,int clientfd,int time){
+    P(&cache_ptr->w);
+
+    CacheLine *cl=&cache_ptr->cache[idx];
+    cl->time=time;
+    rio_writen(clientfd,cl->content,cl->size);
+
+    V(&cache_ptr->w);
+}
+
+void cache_insert(Cache *cache_ptr,char *URL,char *content,int size,int time){
+    P(&cache_ptr->w);
+
+    CacheLine *curr=cache_ptr->cache;
+    int i=0;
+    int lRIdx=0;
+    int lRTime=0x7fffffff;
+    for(;i<CACHE_SIZE;i++){
+        if(!curr->valid){
+            lRIdx=i;
+            break;
+        }
+        if(curr->time<lRTime){
+            lRIdx=i;
+            lRTime=curr->time;
+        }
+        curr++;
+    }
+    curr=&cache_ptr->cache[lRIdx];
+    curr->hash=MurmurOAAT32(URL);
+    curr->valid=1;
+    curr->size=size;
+    curr->time=time;
+    strcpy(curr->URL,URL);
+    memcpy(curr->content,content,size);
+
+    V(&cache_ptr->w);
 }
