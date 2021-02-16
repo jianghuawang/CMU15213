@@ -1,10 +1,14 @@
 /* 1) Use producer-consumer model to have the main thread push client request to a buffer, and worker threads extract request
  * from the buffer, which avoids the overheads of creating threads. 
- * 2) implement the cache as a linkedlist, each node can have arbitrary size. advantage: not waste and can hold more web content.
- * disadvantage: getting the node we want require linear time in the size of the linkedlist.
+ * 2) implement the cache as a linkedlist with a hashtable to quickly find the content we want.
+ * advantage: average O(1) time of search and not waste memory.
+ * disadvantage: insert time still cannot be measured, but requires only O(1) time if no eviction is required
+ * and if we assume that most object have roughly the same size, then we only need to evict constant item before
+ * we can insert, which is also O(1) time. Besides, since we add a hash table, the metadata is larger.
  */
 #include <stdio.h>
 #include "csapp.h"
+#include "map.h"
 
 /* Recommended max cache and object sizes */
 #define MAX_CACHE_SIZE 1049000
@@ -22,16 +26,8 @@ typedef struct {
     sem_t items;
 } sbuf_t;
 
-typedef struct cacheNode{
-    char URL[MAXLINE];
-    char *content;
-    struct cacheNode *prev;
-    struct cacheNode *next;
-    int hash;
-    int size;
-} CacheNode;
-
 typedef struct {
+    HashMap hm;
     CacheNode* header;
     CacheNode* footer;
     volatile int readcnt;
@@ -61,17 +57,6 @@ void send_from_cache(Cache *cache_ptr,CacheNode *curr,int clientfd);
 void cache_insert(Cache *cache_ptr,char *URL,char *content,int size);
 void cache_deinit(Cache *cache_ptr);
 void free_CacheNode(CacheNode* cl);
-
-int MurmurOAAT32(char * key)
-{
-    int h=3323198485ul;
-    for (;*key;++key) {
-        h ^= *key;
-        h *= 0x5bd1e995;
-        h ^= h >> 15;
-    }
-    return h;
-}
 
 /* You won't lose style points for including this long line in your code */
 static const char *user_agent_hdr = "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10.16; rv:85.0) Gecko/20100101 Firefox/85.0\r\n";
@@ -331,6 +316,7 @@ int sbuf_remove(sbuf_t *sp){
 void cache_init(Cache* cache_ptr){
     cache_ptr->header=NULL;
     cache_ptr->footer=NULL;
+    map_init(&cache_ptr->hm);
     sem_init(&cache_ptr->mutex,0,1);
     sem_init(&cache_ptr->w,0,1);
     cache_ptr->readcnt=0;
@@ -345,12 +331,7 @@ CacheNode *cache_find(Cache* cache_ptr,char *URL){
         P(&cache_ptr->w);
     V(&cache_ptr->mutex);
 
-    CacheNode *curr=cache_ptr->header;
-    while(curr){
-        if(curr->hash==hash && !strcmp(URL,curr->URL))
-            break;
-        curr=curr->next;
-    }
+    CacheNode *curr=map_find(&cache_ptr->hm,URL);
 
     P(&cache_ptr->mutex);
     cache_ptr->readcnt--;
@@ -385,6 +366,7 @@ void cache_insert(Cache *cache_ptr,char *URL,char *content,int size){
         CacheNode *curr=cache_ptr->footer;
         while(left_size<size){
             left_size+=curr->size;
+            map_delete(&cache_ptr->hm,curr->URL);
             curr=curr->prev;
             free_CacheNode(curr->next);
         }
@@ -395,6 +377,7 @@ void cache_insert(Cache *cache_ptr,char *URL,char *content,int size){
     cache_ptr->left_size-=size;
     CacheNode *curr=(CacheNode *)malloc(sizeof(CacheNode));
     CacheNode *header=cache_ptr->header;
+    map_insert(&cache_ptr->hm,URL,curr);
     curr->prev=NULL;
     curr->next=header;
     if(header)header->prev=curr;
@@ -412,6 +395,7 @@ void cache_insert(Cache *cache_ptr,char *URL,char *content,int size){
 void cache_deinit(Cache *cache_ptr){
     CacheNode *curr=cache_ptr->header;
     while(curr){
+        map_delete(&cache_ptr->hm,curr->URL);
         curr=curr->next;
         free_CacheNode(curr->prev);
     }
