@@ -11,5 +11,5 @@
 
 Description about my solution is either in a separate markdown file or in the source file as comments.
 
-**Conclusion: A great prerequiste course for Operating System, Network Prorgamming, and Concurrently Programming.**
+**Conclusion: A great prerequiste course for Operating System, Network Prorgamming, and Concurrent Programming.**
 
