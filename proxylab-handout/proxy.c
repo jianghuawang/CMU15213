@@ -60,7 +60,7 @@ void cache_init(Cache *cache_ptr);
 int cache_find(Cache* cache_ptr,char *URL);
 void send_from_cache(Cache *cache_ptr,int idx,int clientfd,int time);
 void cache_insert(Cache *cache_ptr,char *URL,char *content,int size,int time);
-
+void cache_deinit(Cache *cache_ptr);
 
 int MurmurOAAT32(char * key)
 {
@@ -108,7 +108,6 @@ int main(int argc,char* argv[])
         printf("connect to client on file descriptor %d\n",connfd);
         sbuf_insert(&sbuf,connfd,time);
     }
-    sbuf_deinit(&sbuf);
     return 1;
 }
 
@@ -262,15 +261,18 @@ void send_request(int serverfd,char *request_line,char *header){
 
 void redirect_response(int clientfd,rio_t *rio_server,char *URL,int time){
     size_t size,total_size=0;
-    char buf[MAX_OBJECT_SIZE];
-    char *pos=buf;
-    while((size=rio_readnb(rio_server,pos,MAXLINE))!=0){
-        if(rio_writen(clientfd,pos,size)<0)return;
+    char response[MAX_OBJECT_SIZE],buf[MAXLINE];
+    char *pos=response;
+    while((size=rio_readnb(rio_server,buf,MAXLINE))!=0){
+        if(rio_writen(clientfd,buf,size)<0)return;
         total_size+=size;
-        pos+=size;
+        if(total_size<MAX_OBJECT_SIZE){
+            memcpy(pos,buf,size);
+            pos+=size;
+        }
     }
-    if(total_size<=MAX_OBJECT_SIZE){
-        cache_insert(&cache,URL,buf,total_size,time);
+    if(total_size<MAX_OBJECT_SIZE){
+        cache_insert(&cache,URL,response,total_size,time);
     }
 }
 
@@ -381,20 +383,20 @@ void cache_insert(Cache *cache_ptr,char *URL,char *content,int size,int time){
 
     CacheLine *curr=cache_ptr->cache;
     int i=0;
-    int lRIdx=0;
-    int lRTime=0x7fffffff;
+    int lr_idx=0;
+    int lr_time=0x7fffffff;
     for(;i<CACHE_SIZE;i++){
         if(!curr->valid){
-            lRIdx=i;
+            lr_idx=i;
             break;
         }
-        if(curr->time<lRTime){
-            lRIdx=i;
-            lRTime=curr->time;
+        if(curr->time<lr_time){
+            lr_idx=i;
+            lr_time=curr->time;
         }
         curr++;
     }
-    curr=&cache_ptr->cache[lRIdx];
+    curr=&cache_ptr->cache[lr_idx];
     curr->hash=MurmurOAAT32(URL);
     curr->valid=1;
     curr->size=size;
@@ -403,4 +405,8 @@ void cache_insert(Cache *cache_ptr,char *URL,char *content,int size,int time){
     memcpy(curr->content,content,size);
 
     V(&cache_ptr->w);
+}
+
+void cache_deinit(Cache *cache_ptr){
+    free(cache_ptr->cache);
 }
